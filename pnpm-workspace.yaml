@@ -1,0 +1,6 @@
+packages:
+  - client
+  - server
+allowBuilds:
+  unrs-resolver: true
+  esbuild: true

@@ -1,0 +1,39 @@
+# 依赖
+node_modules/
+.pnpm-store/
+
+# 构建产物
+dist/
+client/dist/
+server/dist/
+*.tsbuildinfo
+
+# 本地数据库（含 WAL/SHM 与冒烟隔离库）
+data/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+db_backups/
+smoke_test.db*
+
+# 环境变量与密钥
+.env
+.env.local
+.env*.local
+
+# 日志
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# 临时脚本（AGENTS.md 约定：用完即删，不提交）
+scripts/*.bak
+tmp/
+*.tmp
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

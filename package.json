@@ -1,0 +1,18 @@
+{
+  "name": "daycraft",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.34.6",
+  "scripts": {
+    "dev": "pnpm dev:all",
+    "dev:all": "pnpm install --silent && pnpm --parallel -r dev",
+    "dev:server": "pnpm install --silent && pnpm --filter daycraft-server dev",
+    "dev:client": "pnpm install --silent && pnpm --filter daycraft-client dev",
+    "build": "pnpm -r build",
+    "start": "cross-env NODE_ENV=production pnpm --filter daycraft-server start",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3"
+  }
+}
