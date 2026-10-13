@@ -82,7 +82,6 @@ export type UserAISettings = {
   is_enabled: boolean;
   created_at: string;
   updated_at: string;
-  settings_type?: 'system' | 'custom';
 };
 
 export type WorkBreakdownItem = {

@@ -28,11 +28,13 @@ export function getDb(): DatabaseSync {
   // 历史迁移：钉钉集成已下线，删除遗留表（新库无此表，DROP 幂等无害）
   db.exec('DROP TABLE IF EXISTS user_dingtalk_settings;');
   // 历史迁移：AI 调用次数限额已下线，删除遗留列（新库无此列，老库幂等清理）
+  // 历史迁移：系统内置 AI 已下线，只保留用户自定义，删除 settings_type 列
   for (const col of [
     'system_ai_remaining_calls',
     'system_ai_total_calls_limit',
     'system_ai_calls',
     'custom_ai_calls',
+    'settings_type',
   ]) {
     try {
       const cols = db

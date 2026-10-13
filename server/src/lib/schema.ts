@@ -153,7 +153,6 @@ CREATE TABLE IF NOT EXISTS user_ai_settings (
   system_prompt TEXT NOT NULL DEFAULT '你是一个智能助手，可以帮助用户生成日报、周报和月报。请根据用户提供的信息，生成专业、简洁的报告内容。',
   user_prompt TEXT NOT NULL DEFAULT '请根据我的工作内容，生成一份专业的日报。',
   is_enabled INTEGER NOT NULL DEFAULT 1,
-  settings_type TEXT NOT NULL DEFAULT 'system',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

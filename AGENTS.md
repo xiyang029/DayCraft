@@ -91,7 +91,7 @@ $env:NODE_ENV='production'; $env:PORT='3002'; $env:SQLITE_DB_PATH='F:\DayCraft\s
 - 登录/注册/重置密码页用 `components/captcha-input.tsx`（文本直显验证码，不分大小写）。
 - 登录成功后必须 `await refreshSession()` 再 `navigate`，
   否则守卫看到旧 `user=null` 会踢回登录页（有过血案）。
-- 环境变量全部 `import.meta.env.VITE_*`（`ai-env.ts`）；不要用 `process.env`。
+- 环境变量全部 `import.meta.env.VITE_*`；不要用 `process.env`。
 - 管理员 badge 只显示最高权限（admin 优先），不要 map 整个 role 数组。
 - 危险操作（删用户、改角色）必须用 `components/ui/dialog` 确认框；
   自己那一行按钮禁用，后端同样拦截（400）。

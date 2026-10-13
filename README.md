@@ -6,7 +6,7 @@
 - 项目管理：多项目、激活/停用、编码查重
 - 工作分解（WBS）：5 级树形结构、拖拽排序、移动、甘特图、里程碑、XMind/Excel 导入导出、公开分享链接（可设密码/有效期）
 - 日报/计划：按日填写，待办完成可一键联动写入日报
-- 周报/月报/项目周报：由日报自动聚合生成，支持 AI 润色（可配系统内置或自定义模型）
+- 周报/月报/项目周报：由日报自动聚合生成，支持 AI 润色（自定义模型）
 - 待办管理：优先级、截止日期、完成确认
 - 系统管理：用户一览、活跃统计、角色管理
 
@@ -62,7 +62,7 @@ Docker 一键部署见 `deploy.sh`（`./deploy.sh` 全量部署；SQLite 数据�
 | `AUTH_SECRET` | 会话 JWT 签名密钥，生产必改 | — |
 | `COOKIE_SECURE` | 仅 HTTPS 对外时设 `true`；HTTP 部署必须关闭 | 关 |
 | `SITE_URL` / `VITE_SITE_URL` | 站点绝对地址（留空按请求 Host 自动判断） | — |
-| `AI_API_URL` / `VITE_AI_API_URL` … | 系统内置 AI 配置（服务端 `AI_*` 用于注册播种，前端 `VITE_AI_*` 运行时读取） | OpenAI 兼容地址 |
+| `AI_API_URL` / `AI_MODEL_NAME` … | 新用户 AI 默认设置（注册时写入 `user_ai_settings`，仅自定义 AI） | OpenAI 兼容地址 |
 | `VITE_API_PROXY` | 仅开发期：vite 把 `/api` 代理到的地址 | `http://localhost:3001` |
 
 表结构由 `server/src/lib/schema.ts` 在首次启动时自动创建，无需手动建表。

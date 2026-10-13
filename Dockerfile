@@ -33,11 +33,6 @@ COPY . .
 
 # VITE_* 在构建时 baked 进前端（deploy.sh 会自动传 .env 的值）
 # 注意: AUTH_SECRET 等密钥故意不写进来，只能运行时 --env-file 传入，避免进镜像层
-ARG VITE_AI_API_URL=https://api.openai.com/v1
-ARG VITE_AI_API_KEY=sk-your-openai-api-key
-ARG VITE_AI_MODEL_NAME=gpt-3.5-turbo
-ARG VITE_AI_SYSTEM_PROMPT=你是一个智能助手，可以帮助用户生成日报、周报和月报。请根据用户提供的信息，生成专业、简洁的报告内容。
-ARG VITE_AI_USER_PROMPT=请根据我的工作内容，生成一份专业的{report_type}。以下是我的工作记录：\n\n{report_content}
 # 下面两个仅为“消费” deploy.sh 传进来的同名 build-arg，避免未使用告警；
 # 单端口部署下前端用 window.location.origin 即可，VITE_SITE_URL 留空即可
 ARG VITE_SITE_URL=

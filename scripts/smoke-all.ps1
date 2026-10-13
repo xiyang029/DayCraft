@@ -306,18 +306,14 @@ Assert-Api -Name 'GET /api/ai-settings -> 200' -Method GET -Path '/api/ai-settin
     return $null
   } | Out-Null
 
-Assert-Api -Name 'PUT /api/ai-settings 非法 settings_type -> 400' -Method PUT -Path '/api/ai-settings' -Session $adminSess `
-  -Body @{ settings_type = 'weird' } -Expect @(400) -Contains '设置类型不正确' | Out-Null
-
 Assert-Api -Name 'PUT /api/ai-settings 保存 -> 200' -Method PUT -Path '/api/ai-settings' -Session $adminSess `
-  -Body @{ model_name = 'smoke-model'; settings_type = 'custom'; is_enabled = $false } `
+  -Body @{ model_name = 'smoke-model'; is_enabled = $false } `
   -Expect @(200) -Contains 'AI 设置保存成功' | Out-Null
 
 Assert-Api -Name 'GET /api/ai-settings 读回已保存值' -Method GET -Path '/api/ai-settings' -Session $adminSess `
   -Expect @(200) -Verify {
     param($j)
     if ($j.settings.model_name -ne 'smoke-model') { return "model_name 未持久化: $($j.settings.model_name)" }
-    if ($j.settings.settings_type -ne 'custom') { return "settings_type 未持久化: $($j.settings.settings_type)" }
     if ($j.settings.is_enabled -ne $false) { return "is_enabled 应为 false，实得 $($j.settings.is_enabled)" }
     return $null
   } | Out-Null

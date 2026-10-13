@@ -20,9 +20,9 @@ function seedDefaultSettings(userId: string, now: string) {
   const db = getDb();
   db.prepare(
     `INSERT INTO user_ai_settings
-      (id, user_id, api_url, api_key, model_name, system_prompt, user_prompt, is_enabled, settings_type,
+      (id, user_id, api_url, api_key, model_name, system_prompt, user_prompt, is_enabled,
        created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'system', ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
   ).run(
     newId(),
     userId,

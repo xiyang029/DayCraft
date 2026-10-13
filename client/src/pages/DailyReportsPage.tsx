@@ -10,6 +10,7 @@ import { zhCN } from "date-fns/locale";
 import { toast } from "sonner";
 import { useNavigate } from 'react-router-dom';
 import { usePersistentState } from "../lib/utils/page-persistence";
+import { isAdjustedWorkday, isWorkdayCN } from "../lib/utils/workday";
 
 interface ReportWithItems {
   id: string;
@@ -49,6 +50,7 @@ interface DayItem {
   day: string;
   hasReport: boolean;
   report: ReportWithItems | null;
+  isAdjusted?: boolean; // 是否为调休上班日（落在周末的工作日）
 }
 
 // 新增周数据接口
@@ -186,8 +188,10 @@ export default function DailyReportsPage() {
       const weekNumber = getWeek(weekStartDate, { locale: zhCN });
       const year = getYear(weekStartDate);
       
-      // 获取这一周的所有日期
-      const weekDates = eachDayOfInterval({ start: weekStartDate, end: weekEndDate });
+      // 获取这一周的所有日期（中国法定工作日：含调休上班的周末，不含法定节假日）
+      const weekDates = eachDayOfInterval({ start: weekStartDate, end: weekEndDate }).filter((d) =>
+        isWorkdayCN(d),
+      );
       
       // 创建每天的初始数据
       const days: DayItem[] = weekDates.map(date => {
@@ -199,7 +203,8 @@ export default function DailyReportsPage() {
           formattedDate: format(date, 'yyyy-MM-dd'),
           day,
           hasReport: false,
-          report: null
+          report: null,
+          isAdjusted: isAdjustedWorkday(date)
         };
       });
       
@@ -208,7 +213,7 @@ export default function DailyReportsPage() {
         year,
         startDate: weekStartDate,
         endDate: weekEndDate,
-        formattedPeriod: `${format(weekStartDate, 'yyyy-MM-dd')} 至 ${format(weekEndDate, 'yyyy-MM-dd')}`,
+        formattedPeriod: `${format(weekDates[0], 'yyyy-MM-dd')} 至 ${format(weekDates[weekDates.length - 1], 'yyyy-MM-dd')}`,
         days
       });
     }
@@ -767,6 +772,11 @@ export default function DailyReportsPage() {
                               {isCurrentDay && (
                                 <span className="inline-flex items-center px-1.5 md:px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
                                 今天
+                              </span>
+                            )}
+                              {day.isAdjusted && (
+                                <span className="inline-flex items-center px-1.5 md:px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                调休上班
                               </span>
                             )}
                               {day.hasReport ? (

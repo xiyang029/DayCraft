@@ -4,11 +4,10 @@ import { useAuth } from "../contexts/auth-context";
 import { apiGet, apiPut } from "../lib/api";
 import type { UserAISettings } from "../lib/db/types";
 import { toast } from "sonner";
-import { Loader2, Eye, EyeOff, TestTube, PlusCircle, Settings, Link, ShieldCheck, UserCog, Share, Trash2, Edit, Copy, Calendar, Lock, Play, Pause } from "lucide-react";
+import { Loader2, Eye, EyeOff, TestTube, PlusCircle, Settings, Link, Share, Trash2, Copy, Calendar, Lock, Play, Pause } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { Switch } from "../components/ui/switch";
 import { Label } from "../components/ui/label";
-import { getSystemAIConfig } from "../lib/utils/ai-env";
 
 interface ModelOption {
   value: string;
@@ -48,7 +47,6 @@ export default function SettingsPage() {
   const [isCustomModel, setIsCustomModel] = useState(false);
   const [customModelName, setCustomModelName] = useState("");
   const [activeTab, setActiveTab] = useState("ai");
-  const [aiType, setAiType] = useState<'system' | 'custom'>('custom');
   
   // 表单状态
   const [settings, setSettings] = useState<UserAISettings | null>(null);
@@ -100,7 +98,6 @@ export default function SettingsPage() {
         if (aiRes.settings) {
           const userSettings = aiRes.settings;
           setSettings(userSettings);
-          setAiType(userSettings.settings_type === 'system' ? 'system' : 'custom');
 
           // 检查是否是自定义模型
           const isCustom = !modelOptions.some(option =>
@@ -130,51 +127,6 @@ export default function SettingsPage() {
 
     loadSettings();
   }, [user]);
-
-  // 切换AI类型
-  const handleAiTypeChange = async (type: 'system' | 'custom') => {
-    setAiType(type);
-    if (!user || !settings) return;
-
-    // 只更新settings_type
-    try {
-      const res = await apiPut<{ settings: UserAISettings }>('/api/ai-settings', { settings_type: type });
-      if (res.settings) setSettings(res.settings);
-    } catch (error) {
-      console.error('切换AI类型失败:', error);
-    }
-
-    if (type === 'system') {
-      // 读取系统环境变量
-      const sys = getSystemAIConfig();
-      setFormData({
-        api_url: sys.api_url,
-        api_key: sys.api_key,
-        model_name: sys.model_name,
-        system_prompt: sys.system_prompt,
-        user_prompt: sys.user_prompt,
-        is_enabled: true
-      });
-      setSettings(prev => prev ? {
-        ...prev,
-        settings_type: type
-      } : null);
-    } else {
-      // 恢复用户自定义
-      setFormData({
-        api_url: settings.api_url || '',
-        api_key: settings.api_key || '',
-        model_name: settings.model_name || '',
-        system_prompt: settings.system_prompt || '',
-        user_prompt: settings.user_prompt || '',
-        is_enabled: settings.is_enabled !== undefined ? settings.is_enabled : true
-      });
-      setSettings(prev => prev ? {
-        ...prev,
-        settings_type: type
-      } : null);
-    }
-  };
 
   // 处理表单提交
   const handleSubmit = async (e: React.FormEvent) => {
@@ -481,34 +433,7 @@ export default function SettingsPage() {
                 />
               </div>
             </div>
-            <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <button
-                type="button"
-                className={`flex items-center p-4 rounded-lg border transition-all duration-200 shadow-sm space-x-4 ${aiType === 'system' ? 'border-blue-600 bg-blue-50 ring-2 ring-blue-200' : 'border-gray-200 bg-white hover:border-blue-400'}`}
-                onClick={() => handleAiTypeChange('system')}
-                disabled={aiType === 'system'}
-              >
-                <ShieldCheck className={`h-8 w-8 ${aiType === 'system' ? 'text-blue-600' : 'text-gray-400'}`} />
-                <div className="text-left">
-                  <div className={`font-bold text-lg ${aiType === 'system' ? 'text-blue-700' : 'text-gray-800'}`}>系统内置AI</div>
-                  <div className="text-gray-500 text-sm">由系统统一配置，安全可靠，免去个人API管理。</div>
-                </div>
-              </button>
-              <button
-                type="button"
-                className={`flex items-center p-4 rounded-lg border transition-all duration-200 shadow-sm space-x-4 ${aiType === 'custom' ? 'border-blue-600 bg-blue-50 ring-2 ring-blue-200' : 'border-gray-200 bg-white hover:border-blue-400'}`}
-                onClick={() => handleAiTypeChange('custom')}
-                disabled={aiType === 'custom'}
-              >
-                <UserCog className={`h-8 w-8 ${aiType === 'custom' ? 'text-blue-600' : 'text-gray-400'}`} />
-                <div className="text-left">
-                  <div className={`font-bold text-lg ${aiType === 'custom' ? 'text-blue-700' : 'text-gray-800'}`}>用户自定义AI</div>
-                  <div className="text-gray-500 text-sm">可自定义API、模型和提示词，满足个性化需求。</div>
-                </div>
-              </button>
-            </div>
-            {aiType === 'custom' && (
-              <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6">
                 <div className={!formData.is_enabled ? "opacity-50 pointer-events-none" : ""}>
                   <h2 className="text-lg font-medium text-gray-900 mb-4">API设置</h2>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -690,20 +615,6 @@ export default function SettingsPage() {
                   </button>
                 </div>
               </form>
-            )}
-            {aiType === 'system' && (
-              <div className="p-6 bg-blue-50 rounded-lg border border-blue-100 text-blue-800 flex items-start space-x-4">
-                <ShieldCheck className="h-8 w-8 flex-shrink-0 text-blue-500 mt-1" />
-                <div>
-                  <div className="font-bold text-lg mb-1">当前使用系统内置AI</div>
-                  <div className="text-sm mb-2">所有AI参数由系统统一配置，无需个人维护。若需自定义API或模型，请切换到"用户自定义AI"。</div>
-                  <div className="text-xs text-blue-700">
-                    <div>API URL: <span className="font-mono">{getSystemAIConfig().api_url || '未配置'}</span></div>
-                    <div>模型名称: <span className="font-mono">{getSystemAIConfig().model_name || '未配置'}</span></div>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </TabsContent>
         

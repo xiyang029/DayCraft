@@ -9,7 +9,6 @@ import { format, startOfWeek, endOfWeek, eachDayOfInterval, getWeek, getMonth, g
 import { zhCN } from "date-fns/locale";
 import { toast } from "sonner";
 import { usePersistentState } from "../lib/utils/page-persistence";
-import { getSystemAIConfig } from "../lib/utils/ai-env";
 
 interface DailyReportData {
   date: string;
@@ -142,32 +141,21 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({ title, content, onClose, 
       return;
     }
     
-    // 根据AI设置类型选择配置
-    let apiConfig;
-    if (aiSettings.settings_type === 'system') {
-      // 使用系统内置AI配置
-      apiConfig = getSystemAIConfig();
-      if (!apiConfig.api_key) {
-        toast.error('系统内置AI未配置API密钥，请联系管理员');
-        return;
-      }
-    } else {
-      // 使用用户自定义AI配置
-      if (!aiSettings.api_key) {
-        toast.error('未设置API密钥，请先在设置页面配置');
-        return;
-      }
-      apiConfig = {
-        api_url: aiSettings.api_url,
-        api_key: aiSettings.api_key,
-        model_name: aiSettings.model_name,
-        system_prompt: aiSettings.system_prompt,
-        user_prompt: aiSettings.user_prompt,
-      };
+    // 使用用户自定义AI配置
+    if (!aiSettings.api_key) {
+      toast.error('未设置API密钥，请先在设置页面配置');
+      return;
     }
+    const apiConfig = {
+      api_url: aiSettings.api_url,
+      api_key: aiSettings.api_key,
+      model_name: aiSettings.model_name,
+      system_prompt: aiSettings.system_prompt,
+      user_prompt: aiSettings.user_prompt,
+    };
     
     setIsPolishing(true);
-    toast.info(`正在使用${aiSettings.settings_type === 'system' ? '系统内置' : '自定义'}AI润色报告...`);
+    toast.info('正在使用自定义AI润色报告...');
     
     try {
       // 准备提示词

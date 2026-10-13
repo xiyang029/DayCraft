@@ -46,7 +46,6 @@ const UPDATABLE = [
   'system_prompt',
   'user_prompt',
   'is_enabled',
-  'settings_type',
 ];
 
 aiSettingsRouter.put('/', async (req, res) => {
@@ -64,12 +63,6 @@ aiSettingsRouter.put('/', async (req, res) => {
         if (key === 'is_enabled') {
           sets.push(`${key} = ?`);
           args.push(toInt(body[key] as boolean));
-        } else if (key === 'settings_type') {
-          if (body[key] !== 'system' && body[key] !== 'custom') {
-            return res.status(400).json({ error: '设置类型不正确' });
-          }
-          sets.push(`${key} = ?`);
-          args.push(body[key]);
         } else {
           sets.push(`${key} = ?`);
           args.push(body[key]);
