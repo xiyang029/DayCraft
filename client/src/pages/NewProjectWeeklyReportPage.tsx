@@ -1,15 +1,28 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CalendarIcon, PlusIcon, TrashIcon, SaveIcon, ArrowLeftIcon, BookmarkIcon, Loader2Icon, EyeIcon, EyeOffIcon, CopyIcon, FileTextIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { CalendarIcon, PlusIcon, TrashIcon, SaveIcon, ArrowLeftIcon, BookmarkIcon, EyeIcon, EyeOffIcon, CopyIcon, FileTextIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { Link } from 'react-router-dom';
 import { useAuth } from "../contexts/auth-context";
 import { apiGet, apiPost } from "../lib/api";
 import type { Project, WorkBreakdownItem as DbWorkBreakdownItem } from "../lib/db/types";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { format, startOfISOWeek, endOfISOWeek, getISOWeek, getYear } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { usePersistentState, clearPageState } from "../lib/utils/page-persistence";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "cn";
+import { Badge } from "@/components/ui/badge";
+import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Separator } from "@/components/ui/separator";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+
 
 interface WorkItem {
   id?: string;
@@ -18,26 +31,101 @@ interface WorkItem {
   workItemId?: string;
 }
 
-interface ProjectWeeklyReportData {
-  id: string;
-  is_plan?: boolean;
-}
-
-interface ProjectWeeklyReportItemData {
-  id: string;
-  content: string;
-  project_id: string;
-  work_item_id?: string;
-}
-
-
-
 interface WorkBreakdownItemWithChildren {
   id: string;
   name: string;
   level: number;
   parent_id: string | null;
   children?: WorkBreakdownItemWithChildren[];
+}
+
+// 拍平工作分解树，供 Select items 做 label 映射（base-nova 下 SelectValue 只认 items，不认 JSX）
+const flattenWorkItemOptions = (list: WorkBreakdownItemWithChildren[]): { label: string; value: string }[] =>
+  list.flatMap((item) => [
+    { label: item.name, value: item.id },
+    ...flattenWorkItemOptions(item.children || []),
+  ]);
+
+interface WorkItemSelectorProps {
+  id?: string;
+  projectId: string;
+  items: WorkBreakdownItemWithChildren[];
+  selectedWorkItemId?: string;
+  onChange?: (value: string) => void;
+  onLoadRequest?: (projectId: string) => void;
+}
+
+// 工作分解项选择器：抽成局部组件，避免每个工作项行都重复一整套 Select
+function WorkItemSelector({ id, projectId, items, selectedWorkItemId, onChange, onLoadRequest }: WorkItemSelectorProps) {
+  // 如果工作项还没有加载，尝试加载
+  if (items.length === 0 && projectId) {
+    onLoadRequest?.(projectId);
+  }
+
+  const renderOptions = (list: WorkBreakdownItemWithChildren[], level = 0): JSX.Element[] => {
+    const options: JSX.Element[] = [];
+
+    list.forEach(item => {
+      const indent = '　'.repeat(level);
+      options.push(
+        <SelectItem key={item.id} value={item.id}>
+          {indent}{item.name}
+        </SelectItem>
+      );
+
+      if (item.children && item.children.length > 0) {
+        options.push(...renderOptions(item.children, level + 1));
+      }
+    });
+
+    return options;
+  };
+
+  return (
+    <Select value={selectedWorkItemId || "__none"} onValueChange={(value: string | null) => onChange?.(value === null || value === "__none" ? "" : value)} items={[{ label: '选择工作项（可选）', value: '__none' }, ...flattenWorkItemOptions(items)]}>
+      <SelectTrigger id={id} className="w-full">
+        <SelectValue placeholder="选择工作项（可选）" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          <SelectItem value="__none">选择工作项（可选）</SelectItem>
+          {renderOptions(items)}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
+interface PreviewTogglesProps {
+  showWorkItems: boolean;
+  showHierarchy: boolean;
+  onChange: (showWorkItems: boolean, showHierarchy: boolean) => void;
+}
+
+// 预览显示控制（工作项 / 层级）——用 ToggleGroup 表达 pressed 状态
+function PreviewToggles({ showWorkItems, showHierarchy, onChange }: PreviewTogglesProps) {
+  return (
+    <ToggleGroup
+      multiple
+      variant="outline"
+      size="sm"
+      value={[
+        ...(showWorkItems ? ['work-items'] : []),
+        ...(showHierarchy ? ['hierarchy'] : []),
+      ]}
+      onValueChange={(value) => onChange(value.includes('work-items'), value.includes('hierarchy'))}
+    >
+      <ToggleGroupItem value="work-items" title={showWorkItems ? '隐藏工作项' : '显示工作项'}>
+        {showWorkItems ? <EyeIcon data-icon="inline-start" /> : <EyeOffIcon data-icon="inline-start" />}
+        工作项
+      </ToggleGroupItem>
+      {showWorkItems && (
+        <ToggleGroupItem value="hierarchy" title={showHierarchy ? '隐藏层级' : '显示层级'}>
+          层级
+        </ToggleGroupItem>
+      )}
+    </ToggleGroup>
+  );
 }
 
 export default function NewProjectWeeklyReportPage() {
@@ -58,7 +146,6 @@ export default function NewProjectWeeklyReportPage() {
   const [year, setYear] = usePersistentState('project-weekly-report-year', defaultYear);
   const [weekNumber, setWeekNumber] = usePersistentState('project-weekly-report-week', defaultWeek);
   const [workItems, setWorkItems] = usePersistentState<WorkItem[]>('project-weekly-report-work-items', []);
-  const [isPlan, setIsPlan] = usePersistentState('project-weekly-report-is-plan', false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [workBreakdownItems, setWorkBreakdownItems] = useState<{ [projectId: string]: WorkBreakdownItemWithChildren[] }>({});
   const [allWorkItems, setAllWorkItems] = useState<{ [projectId: string]: DbWorkBreakdownItem[] }>({});
@@ -129,7 +216,7 @@ export default function NewProjectWeeklyReportPage() {
       setProjects(data.projects || []);
     } catch (error) {
       console.error('获取项目失败', error);
-      toast.error('获取项目失败');
+      toast.add({ title: '获取项目失败', type: 'error' });
     }
   }, [user]);
 
@@ -176,7 +263,7 @@ export default function NewProjectWeeklyReportPage() {
       }));
     } catch (error) {
       console.error('获取工作分解项失败', error);
-      toast.error('获取工作分解项失败');
+      toast.add({ title: '获取工作分解项失败', type: 'error' });
     }
   }, [user]);
 
@@ -214,7 +301,6 @@ export default function NewProjectWeeklyReportPage() {
 
       if (reportData) {
         setReportId(reportData.id as string);
-        setIsPlan((reportData as any).is_plan || false);
 
         // 报告条目已包含在响应中
         const items: WorkItem[] = (reportData.items || []).map((item: any) => ({
@@ -238,7 +324,7 @@ export default function NewProjectWeeklyReportPage() {
 
     } catch (error) {
       console.error('获取现有报告失败', error);
-      toast.error('获取现有报告失败');
+      toast.add({ title: '获取现有报告失败', type: 'error' });
     } finally {
       // 清除请求状态
       isRequestingRef.current = false;
@@ -254,7 +340,7 @@ export default function NewProjectWeeklyReportPage() {
       : (projects.length > 0 ? projects[0].id : ''));
 
     if (projectId === '') {
-      toast.error('请先选择一个项目');
+      toast.add({ title: '请先选择一个项目', type: 'error' });
       return;
     }
 
@@ -344,46 +430,6 @@ export default function NewProjectWeeklyReportPage() {
       );
   }, [projects, workItems]);
 
-  // 渲染工作分解项选择器
-  const renderWorkItemSelector = (projectId: string, selectedWorkItemId?: string, onChange?: (value: string) => void) => {
-    const items = workBreakdownItems[projectId] || [];
-
-    // 如果工作项还没有加载，尝试加载
-    if (items.length === 0 && projectId) {
-      fetchWorkBreakdownItems(projectId);
-    }
-
-    const renderOptions = (items: WorkBreakdownItemWithChildren[], level = 0): JSX.Element[] => {
-      const options: JSX.Element[] = [];
-      
-      items.forEach(item => {
-        const indent = '　'.repeat(level);
-        options.push(
-          <option key={item.id} value={item.id}>
-            {indent}{item.name}
-          </option>
-        );
-        
-        if (item.children && item.children.length > 0) {
-          options.push(...renderOptions(item.children, level + 1));
-        }
-      });
-      
-      return options;
-    };
-    
-    return (
-      <select
-        value={selectedWorkItemId || ''}
-        onChange={(e) => onChange?.(e.target.value)}
-        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-      >
-        <option value="">选择工作项（可选）</option>
-        {renderOptions(items)}
-      </select>
-    );
-  };
-
   // 构建带快照字段的条目（服务端按 年+周 upsert，明细全量替换）
   const buildSnapshotItems = (validItems: WorkItem[]) => {
     return validItems.map((item) => {
@@ -429,18 +475,17 @@ export default function NewProjectWeeklyReportPage() {
         week_number: weekNumber,
         start_date: format(weekStart, 'yyyy-MM-dd'),
         end_date: format(weekEnd, 'yyyy-MM-dd'),
-        is_plan: isPlan,
         items: buildSnapshotItems(validItems),
       });
 
       setReportId(res.report.id);
 
-      toast.success('项目周报暂存成功');
+      toast.add({ title: '项目周报暂存成功', type: 'success' });
 
       // 暂存后不清除页面状态，也不跳转
     } catch (error) {
       console.error('暂存项目周报失败', error);
-      toast.error('暂存项目周报失败');
+      toast.add({ title: '暂存项目周报失败', type: 'error' });
     } finally {
       setIsSavingDraft(false);
     }
@@ -453,7 +498,7 @@ export default function NewProjectWeeklyReportPage() {
     // 验证数据
     const validItems = workItems.filter(item => item.content.trim() && item.projectId);
     if (validItems.length === 0) {
-      toast.error('请至少添加一个有效的工作项');
+      toast.add({ title: '请至少添加一个有效的工作项', type: 'error' });
       return;
     }
 
@@ -464,13 +509,12 @@ export default function NewProjectWeeklyReportPage() {
         week_number: weekNumber,
         start_date: format(weekStart, 'yyyy-MM-dd'),
         end_date: format(weekEnd, 'yyyy-MM-dd'),
-        is_plan: isPlan,
         items: buildSnapshotItems(validItems),
       });
 
       setReportId(res.report.id);
 
-      toast.success('项目周报保存成功');
+      toast.add({ title: '项目周报保存成功', type: 'success' });
 
       // 清除页面状态
       clearPageState('project-weekly-report');
@@ -479,7 +523,7 @@ export default function NewProjectWeeklyReportPage() {
       navigate('/dashboard/project-reports');
     } catch (error) {
       console.error('保存项目周报失败', error);
-      toast.error('保存项目周报失败');
+      toast.add({ title: '保存项目周报失败', type: 'error' });
     } finally {
       setIsSavingReport(false);
     }
@@ -502,7 +546,6 @@ export default function NewProjectWeeklyReportPage() {
     // 立即清空当前状态，避免数据混乱
     setReportId('');
     setWorkItems([]);
-    setIsPlan(false);
 
     // 重置数据加载状态，允许重新加载
     dataLoadedRef.current = false;
@@ -526,7 +569,6 @@ export default function NewProjectWeeklyReportPage() {
     // 立即清空当前状态，避免数据混乱
     setReportId('');
     setWorkItems([]);
-    setIsPlan(false);
 
     // 重置数据加载状态，允许重新加载
     dataLoadedRef.current = false;
@@ -543,7 +585,7 @@ export default function NewProjectWeeklyReportPage() {
     const previewContent = generatePreviewContent();
 
     if (!previewContent || previewContent.length === 0) {
-      toast.error('没有可复制的内容');
+      toast.add({ title: '没有可复制的内容', type: 'error' });
       return;
     }
 
@@ -601,11 +643,11 @@ export default function NewProjectWeeklyReportPage() {
 
     navigator.clipboard.writeText(markdownContent)
       .then(() => {
-        toast.success('Markdown格式内容已复制到剪贴板');
+        toast.add({ title: 'Markdown格式内容已复制到剪贴板', type: 'success' });
       })
       .catch(err => {
         console.error('复制失败:', err);
-        toast.error('复制失败，请重试');
+        toast.add({ title: '复制失败，请重试', type: 'error' });
       });
   };
 
@@ -614,7 +656,7 @@ export default function NewProjectWeeklyReportPage() {
     const previewContent = generatePreviewContent();
 
     if (!previewContent || previewContent.length === 0) {
-      toast.error('没有可复制的内容');
+      toast.add({ title: '没有可复制的内容', type: 'error' });
       return;
     }
 
@@ -664,11 +706,11 @@ export default function NewProjectWeeklyReportPage() {
 
     navigator.clipboard.writeText(yamlContent)
       .then(() => {
-        toast.success('YAML格式内容已复制到剪贴板');
+        toast.add({ title: 'YAML格式内容已复制到剪贴板', type: 'success' });
       })
       .catch(err => {
         console.error('复制失败:', err);
-        toast.error('复制失败，请重试');
+        toast.add({ title: '复制失败，请重试', type: 'error' });
       });
   };
 
@@ -847,400 +889,375 @@ export default function NewProjectWeeklyReportPage() {
   }, []); // 移除所有依赖项
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center">
-          <Link to="/dashboard/project-reports" className="mr-3 p-2 rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-            <ArrowLeftIcon className="h-5 w-5" />
-          </Link>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold">编辑项目周报</h1>
-            <div className="flex flex-wrap gap-2 mt-1.5">
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="返回项目周报列表"
+            render={<Link to="/dashboard/project-reports" />}
+          >
+            <ArrowLeftIcon data-icon="inline-start" />
+          </Button>
+          <div className="flex flex-col gap-1">
+            <h1 className="text-xl font-semibold tracking-tight">编辑项目周报</h1>
+            <div className="flex flex-wrap gap-2">
               {reportId && (
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                <Badge variant="secondary">
                   已有周报
-                </span>
-              )}
-              {isPlan && (
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
-                  项目计划
-                </span>
+                </Badge>
               )}
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm"
             onClick={togglePreview}
-            className="flex-1 sm:flex-none inline-flex items-center justify-center px-3 sm:px-4 py-1.5 sm:py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
           >
-            <EyeIcon className="h-4 w-4 mr-1.5" />
+            <EyeIcon data-icon="inline-start" />
             {showPreview ? '返回编辑' : '预览'}
-          </button>
-          <button
+          </Button>
+          <Button variant="outline" size="sm"
             type="button"
             onClick={saveDraft}
             disabled={isSavingDraft || isSavingReport || projects.length === 0}
-            className="flex-1 sm:flex-none inline-flex items-center justify-center px-3 sm:px-4 py-1.5 sm:py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {isSavingDraft ? (
               <>
-                <Loader2Icon className="h-4 w-4 mr-1.5 animate-spin" />
+                <Spinner data-icon="inline-start" />
                 暂存中...
               </>
             ) : (
               <>
-                <BookmarkIcon className="h-4 w-4 mr-1.5" />
+                <BookmarkIcon data-icon="inline-start" />
                 暂存
               </>
             )}
-          </button>
-          <button
+          </Button>
+          <Button size="sm"
             type="button"
             onClick={saveReport}
             disabled={isSavingDraft || isSavingReport || projects.length === 0}
-            className="flex-1 sm:flex-none inline-flex items-center justify-center px-3 sm:px-4 py-1.5 sm:py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {isSavingReport ? (
               <>
-                <Loader2Icon className="h-4 w-4 mr-1.5 animate-spin" />
+                <Spinner data-icon="inline-start" />
                 保存中...
               </>
             ) : (
               <>
-                <SaveIcon className="h-4 w-4 mr-1.5" />
+                <SaveIcon data-icon="inline-start" />
                 保存周报
               </>
             )}
-          </button>
+          </Button>
         </div>
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center items-center p-6 md:p-12">
-          <div className="animate-spin rounded-full h-6 w-6 md:h-8 md:w-8 border-t-2 border-b-2 border-blue-500"></div>
-          <span className="ml-2 text-sm md:text-base text-gray-500">加载中...</span>
+        <div className="flex items-center justify-center gap-2 p-6 md:p-12">
+          <Spinner className="size-5" />
+          <span className="text-sm text-muted-foreground md:text-base">加载中...</span>
         </div>
       ) : showPreview ? (
-        <div className="bg-white shadow rounded-lg p-4 sm:p-6 border border-gray-100">
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 pb-3 border-b gap-3">
-            <div>
-              <h2 className="text-lg font-medium">项目周报预览</h2>
-              <p className="text-xs sm:text-sm text-gray-500 mt-1">查看格式化后的周报内容</p>
-            </div>
+        <Card>
+          <CardHeader className="border-b">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-col gap-1">
+                <CardTitle>项目周报预览</CardTitle>
+                <CardDescription>查看格式化后的周报内容</CardDescription>
+              </div>
 
-            {/* 控制按钮区域 */}
-            <div className="flex flex-wrap items-center gap-2">
-              {/* 显示控制开关 */}
-              <button
-                onClick={() => setShowWorkItems(!showWorkItems)}
-                className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border ${
-                  showWorkItems
-                    ? 'bg-blue-50 text-blue-700 border-blue-300'
-                    : 'bg-gray-50 text-gray-700 border-gray-300'
-                }`}
-                title={showWorkItems ? '隐藏工作项' : '显示工作项'}
-              >
-                {showWorkItems ? <EyeIcon className="h-3 w-3 mr-1" /> : <EyeOffIcon className="h-3 w-3 mr-1" />}
-                工作项
-              </button>
+              {/* 控制按钮区域 */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* 显示控制开关 */}
+                <PreviewToggles
+                  showWorkItems={showWorkItems}
+                  showHierarchy={showHierarchy}
+                  onChange={(nextShowWorkItems, nextShowHierarchy) => {
+                    setShowWorkItems(nextShowWorkItems);
+                    setShowHierarchy(nextShowHierarchy);
+                  }}
+                />
 
-              {showWorkItems && (
-                <button
-                  onClick={() => setShowHierarchy(!showHierarchy)}
-                  className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border ${
-                    showHierarchy
-                      ? 'bg-green-50 text-green-700 border-green-300'
-                      : 'bg-gray-50 text-gray-700 border-gray-300'
-                  }`}
-                  title={showHierarchy ? '隐藏层级' : '显示层级'}
+                {/* 复制按钮 */}
+                <Button variant="outline" size="sm"
+                  onClick={handleCopyMarkdown}
+                  title="复制为Markdown格式"
                 >
-                  层级
-                </button>
-              )}
+                  <CopyIcon data-icon="inline-start" />MD
+                </Button>
 
-              {/* 复制按钮 */}
-              <button
-                onClick={handleCopyMarkdown}
-                className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                title="复制为Markdown格式"
-              >
-                <CopyIcon className="h-3 w-3 mr-1" />MD
-              </button>
-
-              <button
-                onClick={handleCopyYaml}
-                className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                title="复制为YAML格式"
-              >
-                <CopyIcon className="h-3 w-3 mr-1" />YML
-              </button>
+                <Button variant="outline" size="sm"
+                  onClick={handleCopyYaml}
+                  title="复制为YAML格式"
+                >
+                  <CopyIcon data-icon="inline-start" />YML
+                </Button>
+              </div>
             </div>
-          </div>
-
-          <div className="border-b pb-3 mb-4">
-            <div className="flex items-center">
-              <CalendarIcon className="h-4 w-4 sm:h-5 sm:w-5 text-gray-500 mr-2" />
-              <p className="font-medium text-sm sm:text-base text-gray-800">{year}年第{weekNumber}周 ({formattedPeriod})</p>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <CalendarIcon className="size-4 text-muted-foreground" />
+                <p className="text-sm font-medium sm:text-base">{year}年第{weekNumber}周 ({formattedPeriod})</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={reportId ? "default" : "outline"}>
+                  {reportId ? '已保存' : '未保存'}
+                </Badge>
+              </div>
             </div>
-            <div className="flex items-center gap-2 mt-2">
-              <span className={`px-2 py-0.5 text-xs rounded-full inline-flex items-center ${reportId ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
-                {reportId ? '已保存' : '未保存'}
-              </span>
-              {isPlan && (
-                <span className="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-800 inline-flex items-center">
-                  项目计划
-                </span>
-              )}
-            </div>
-          </div>
+            <Separator />
 
-          {(() => {
-            const previewContent = generatePreviewContent();
-            return previewContent && previewContent.length > 0 ? (
-              <div className="space-y-4">
-                {previewContent.map((projectData: any) => (
-                  <div key={projectData.project.id} className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    {/* 项目标题 */}
-                    <div className="flex items-center mb-3 pb-2 border-b border-blue-200">
-                      <div className="text-base font-medium text-blue-700">
-                        {projectData.project.name}
-                      </div>
-                      <div className="text-sm text-blue-500 ml-2">
-                        ({projectData.project.code})
-                      </div>
-                    </div>
-
-                    {/* 工作内容 */}
-                    <div className="space-y-3">
-                      {showWorkItems ? (
-                        <>
-                          {/* 显示工作项分组 */}
-                          {showHierarchy && projectData.workItemsHierarchy.length > 0 ? (
-                            // 层级模式
-                            projectData.workItemsHierarchy.map((hierarchyItem: any) => (
-                              <div key={hierarchyItem.id} className="bg-white border border-blue-100 rounded-md p-3">
-                                <div className="text-sm font-medium text-blue-600 mb-2">
-                                  {hierarchyItem.fullPath}
-                                </div>
-                                <div className="space-y-1">
-                                  {hierarchyItem.items.map((item: any, index: number) => (
-                                    <div key={index} className="text-sm text-gray-700">
-                                      {index + 1}. {item.content}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))
-                          ) : (
-                            // 简单模式
-                            Object.values(projectData.workItems).map((workItemData: any) => (
-                              <div key={workItemData.workItem.id} className="bg-white border border-blue-100 rounded-md p-3">
-                                <div className="text-sm font-medium text-blue-600 mb-2">
-                                  {workItemData.workItem.name}
-                                </div>
-                                <div className="space-y-1">
-                                  {workItemData.items.map((item: any, index: number) => (
-                                    <div key={index} className="text-sm text-gray-700">
-                                      {index + 1}. {item.content}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))
-                          )}
-
-                          {/* 其他工作（未选择工作项的内容）- 显示工作项时单独显示 */}
-                          {projectData.directItems.length > 0 && (
-                            <div className="bg-white border border-blue-100 rounded-md p-3">
-                              <div className="text-sm font-medium text-blue-600 mb-2">
-                                其他工作
-                              </div>
-                              <div className="space-y-1">
-                                {projectData.directItems.map((item: any, index: number) => (
-                                  <div key={index} className="text-sm text-gray-700">
-                                    {index + 1}. {item.content}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        // 隐藏工作项时：显示所有内容的简化视图
-                        <div className="bg-white border border-blue-100 rounded-md p-3">
-                          <div className="space-y-1">
-                            {projectData.items.map((item: any, index: number) => (
-                              <div key={index} className="text-sm text-gray-700">
-                                {index + 1}. {item.content}
-                              </div>
-                            ))}
-                          </div>
+            {(() => {
+              const previewContent = generatePreviewContent();
+              return previewContent && previewContent.length > 0 ? (
+                <div className="flex flex-col gap-4">
+                  {previewContent.map((projectData: any) => (
+                    <Card key={projectData.project.id} className="bg-accent/40">
+                      <CardHeader>
+                        <div className="flex flex-wrap items-baseline gap-2">
+                          <CardTitle>{projectData.project.name}</CardTitle>
+                          <CardDescription>({projectData.project.code})</CardDescription>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center text-gray-500 py-6 sm:py-8 bg-gray-50 rounded-lg border border-dashed border-gray-200">
-                <p className="text-xs sm:text-sm">预览将在此处显示</p>
-                <p className="text-xs mt-0.5 sm:mt-1">请先添加工作项内容</p>
-              </div>
-            );
-          })()}
-        </div>
+                      </CardHeader>
+                      <CardContent className="flex flex-col gap-3">
+                        {showWorkItems ? (
+                          <>
+                            {/* 显示工作项分组 */}
+                            {showHierarchy && projectData.workItemsHierarchy.length > 0 ? (
+                              // 层级模式
+                              projectData.workItemsHierarchy.map((hierarchyItem: any) => (
+                                <div key={hierarchyItem.id} className="rounded-md bg-card p-3 ring-1 ring-foreground/10">
+                                  <div className="mb-2 text-sm font-medium text-primary">
+                                    {hierarchyItem.fullPath}
+                                  </div>
+                                  <div className="flex flex-col gap-1">
+                                    {hierarchyItem.items.map((item: any, index: number) => (
+                                      <div key={index} className="text-sm">
+                                        {index + 1}. {item.content}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))
+                            ) : (
+                              // 简单模式
+                              Object.values(projectData.workItems).map((workItemData: any) => (
+                                <div key={workItemData.workItem.id} className="rounded-md bg-card p-3 ring-1 ring-foreground/10">
+                                  <div className="mb-2 text-sm font-medium text-primary">
+                                    {workItemData.workItem.name}
+                                  </div>
+                                  <div className="flex flex-col gap-1">
+                                    {workItemData.items.map((item: any, index: number) => (
+                                      <div key={index} className="text-sm">
+                                        {index + 1}. {item.content}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))
+                            )}
+
+                            {/* 其他工作（未选择工作项的内容）- 显示工作项时单独显示 */}
+                            {projectData.directItems.length > 0 && (
+                              <div className="rounded-md bg-card p-3 ring-1 ring-foreground/10">
+                                <div className="mb-2 text-sm font-medium text-primary">
+                                  其他工作
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                  {projectData.directItems.map((item: any, index: number) => (
+                                    <div key={index} className="text-sm">
+                                      {index + 1}. {item.content}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          // 隐藏工作项时：显示所有内容的简化视图
+                          <div className="rounded-md bg-card p-3 ring-1 ring-foreground/10">
+                            <div className="flex flex-col gap-1">
+                              {projectData.items.map((item: any, index: number) => (
+                                <div key={index} className="text-sm">
+                                  {index + 1}. {item.content}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyTitle>预览将在此处显示</EmptyTitle>
+                    <EmptyDescription>请先添加工作项内容</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              );
+            })()}
+          </CardContent>
+        </Card>
       ) : (
-        <form onSubmit={(e) => { e.preventDefault(); saveReport(); }} className="space-y-4 sm:space-y-6">
+        <form onSubmit={(e) => { e.preventDefault(); saveReport(); }} className="flex flex-col gap-6">
           {/* 周报基本信息 */}
-          <div className="bg-white shadow rounded-lg p-4 sm:p-6 border border-gray-100">
-            <div className="grid md:grid-cols-3 gap-4 sm:gap-6">
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  周报时间
-                </label>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-lg flex-1 mr-3">
-                    <CalendarIcon className="h-4 w-4 text-blue-500 mr-2 flex-shrink-0" />
-                    <div className="text-sm font-medium text-blue-700">
-                      {year}年第{weekNumber}周 ({formattedPeriod})
+          <Card>
+            <CardContent>
+              <div className="grid gap-4 sm:gap-6">
+                <div className="flex flex-col gap-2">
+                  <Field>
+                    <FieldLabel>
+                      周报时间
+                    </FieldLabel>
+                    <div className="flex items-center gap-3">
+                    <div className="flex flex-1 items-center gap-2 rounded-lg bg-accent px-3 py-2.5">
+                      <CalendarIcon className="size-4 text-primary" />
+                      <div className="text-sm font-medium text-primary">
+                        {year}年第{weekNumber}周 ({formattedPeriod})
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center space-x-1">
-                    <button
-                      type="button"
-                      onClick={goToPreviousWeek}
-                      className="flex items-center justify-center w-8 h-8 rounded-full border border-gray-300 bg-white hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                      title="上一周"
-                    >
-                      <ChevronLeftIcon className="h-4 w-4 text-gray-600" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <Tooltip>
+                        <TooltipTrigger render={<button type="button"
+                        onClick={goToPreviousWeek}
+                        aria-label="上一周"
+                        className={cn(buttonVariants({ variant: "ghost", size: "icon" }))}
+                      >
+                        <ChevronLeftIcon data-icon="inline-start" />
+                      </button>} />
+                        <TooltipContent>上一周</TooltipContent>
+                      </Tooltip>
 
-                    <button
-                      type="button"
-                      onClick={goToNextWeek}
-                      className="flex items-center justify-center w-8 h-8 rounded-full border border-gray-300 bg-white hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                      title="下一周"
-                    >
-                      <ChevronRightIcon className="h-4 w-4 text-gray-600" />
-                    </button>
+                      <Tooltip>
+                        <TooltipTrigger render={<button type="button"
+                        onClick={goToNextWeek}
+                        aria-label="下一周"
+                        className={cn(buttonVariants({ variant: "ghost", size: "icon" }))}
+                      >
+                        <ChevronRightIcon data-icon="inline-start" />
+                      </button>} />
+                        <TooltipContent>下一周</TooltipContent>
+                      </Tooltip>
+                    </div>
+                    </div>
+                    <FieldError errors={[]} />
+                  </Field>
                   </div>
-                </div>
-                {reportId && (
-                  <div className="mt-1.5 sm:mt-2 flex items-center">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                      已有周报
-                    </span>
-                    <span className="ml-2 text-xs sm:text-sm text-gray-600">
-                      已加载该周的周报内容
-                    </span>
-                  </div>
-                )}
+                  {reportId && (
+                    <div className="flex items-center">
+                      <Badge variant="secondary">
+                        已有周报
+                      </Badge>
+                      <span className="ml-2 text-xs text-muted-foreground sm:text-sm">
+                        已加载该周的周报内容
+                      </span>
+                    </div>
+                  )}
               </div>
-
-              {/* 项目计划区域 */}
-              <div className="bg-gray-50 p-3 sm:p-4 rounded-lg border border-gray-200">
-                <div className="flex items-center mb-1.5 sm:mb-2">
-                  <input
-                    id="is-plan"
-                    name="is-plan"
-                    type="checkbox"
-                    checked={isPlan}
-                    onChange={(e) => setIsPlan(e.target.checked)}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded transition-colors"
-                  />
-                  <label htmlFor="is-plan" className="ml-2 block text-sm font-medium text-gray-700">
-                    标记为项目计划
-                  </label>
-                </div>
-                <p className="text-xs text-gray-500 leading-relaxed">
-                  项目计划将显示蓝色标签，用于区分计划性工作和实际完成的工作
-                </p>
-              </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
           {/* 工作内容和预览区域 */}
           <div className="flex flex-col lg:flex-row gap-4 sm:gap-6">
             {/* 工作内容区域 */}
             <div className="w-full lg:w-2/3">
               <h3 className="text-base sm:text-lg font-semibold mb-2 text-gray-800 flex items-center">
-                <FileTextIcon className="mr-1.5 sm:mr-2 h-4 w-4 sm:h-5 sm:w-5" />项目工作内容
+                <FileTextIcon data-icon="inline-start" />项目工作内容
               </h3>
-              <div className="space-y-3 sm:space-y-4 mb-4">
+              <div className="flex flex-col gap-3 sm:gap-4 mb-4">
                 {/* 添加新项目工作 */}
                 {projects && projects.length > 0 && (
-                  <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200">
+                  <Card>
+                    <CardContent>
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-medium text-sm text-gray-700">添加新项目工作</h4>
                     </div>
                     <div className="flex items-end gap-2">
-                      <div className="flex-grow">
-                        <select
-                          value={selectedProjectId}
-                          onChange={(e) => setSelectedProjectId(e.target.value)}
-                          className="w-full p-1.5 sm:p-2 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-xs sm:text-sm"
-                        >
-                          <option value="">选择项目...</option>
-                          {availableProjects.map((project) => (
-                            <option key={project.id} value={project.id}>
-                              {project.name} ({project.code})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <button
+                      <Field className="grow">
+                        <FieldLabel htmlFor="new-project-select">选择项目</FieldLabel>
+                        <Select value={selectedProjectId || "__none"} onValueChange={(value: string | null) => setSelectedProjectId(value === null || value === "__none" ? "" : value)} items={[{ label: '选择项目...', value: '__none' }, ...availableProjects.map((project) => ({ label: `${project.name} (${project.code})`, value: project.id }))]}>
+                          <SelectTrigger id="new-project-select" className="w-full">
+                            <SelectValue placeholder="选择项目..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectItem value="__none">选择项目...</SelectItem>
+                              {availableProjects.map((project) => (
+                                <SelectItem key={project.id} value={project.id}>
+                                  {project.name} ({project.code})
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                        <FieldError errors={[]} />
+                      </Field>
+                      <Button variant="outline" size="sm"
                         type="button"
                         onClick={addWorkItem}
                         disabled={!selectedProjectId}
                         className="px-2.5 sm:px-4 py-1.5 sm:py-2 bg-blue-50 text-blue-700 rounded-md border border-blue-200 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center text-xs sm:text-sm transition-colors"
                       >
-                        <PlusIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1" /> 添加
-                      </button>
+                        <PlusIcon data-icon="inline-start" /> 添加
+                      </Button>
                     </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 )}
 
                 {/* 按项目分组的工作项 */}
                 {workItemsGroupedByProject.map((group, groupIndex) => (
-                  <div key={groupIndex} className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+                  <Card key={groupIndex}>
+                    <CardContent>
                     <div className="flex justify-between items-center mb-2 sm:mb-3">
                       <h4 className="font-medium text-sm text-blue-600">{group.projectName}</h4>
-                      <button
+                      <Button variant="outline" size="sm"
                         type="button"
                         onClick={() => handleAddWorkItem(group.projectId)}
                         className="text-blue-600 hover:text-blue-800 text-xs sm:text-sm font-medium flex items-center transition-colors"
                       >
-                        <PlusIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-0.5 sm:mr-1" /> 添加工作项
-                      </button>
+                        <PlusIcon data-icon="inline-start" /> 添加工作项
+                      </Button>
                     </div>
-                    <div className="space-y-2 sm:space-y-3">
+                    <div className="flex flex-col gap-2 sm:gap-3">
                       {group.items.map((item, itemIndex) => (
                         <div key={item.tempId} className="flex items-start gap-2 sm:gap-3">
-                          <div className="flex-grow space-y-2">
+                          <div className="grow flex flex-col gap-2">
                             {/* 工作项分类选择 */}
-                            <div>
-                              <label className="block text-xs font-medium text-gray-700 mb-1">
+                            <Field>
+                              <FieldLabel htmlFor={`work-item-category-${item.tempId}`}>
                                 工作项分类（可选）
-                              </label>
-                              {renderWorkItemSelector(
-                                group.projectId,
-                                item.workItemId,
-                                (value) => {
+                              </FieldLabel>
+                              <WorkItemSelector
+                                id={`work-item-category-${item.tempId}`}
+                                projectId={group.projectId}
+                                items={workBreakdownItems[group.projectId] || []}
+                                selectedWorkItemId={item.workItemId}
+                                onChange={(value: string) => {
                                   if (item.globalIndex !== -1) {
                                     updateWorkItem(item.globalIndex, 'workItemId', value);
                                   }
-                                }
-                              )}
-                            </div>
+                                }}
+                                onLoadRequest={fetchWorkBreakdownItems}
+                              />
+                              <FieldError errors={[]} />
+                            </Field>
 
                             {/* 工作内容输入 */}
-                            <div>
-                              <label className="block text-xs font-medium text-gray-700 mb-1">
-                                工作内容 <span className="text-red-500">*</span>
-                              </label>
-                              <textarea
+                            <Field>
+                              <FieldLabel htmlFor={`work-item-content-${item.tempId}`}>
+                                工作内容 <span className="text-destructive">*</span>
+                              </FieldLabel>
+                              <Textarea
+                                id={`work-item-content-${item.tempId}`}
                                 value={item.content}
                                 onChange={(e) => {
                                   if (item.globalIndex !== -1) {
@@ -1249,25 +1266,29 @@ export default function NewProjectWeeklyReportPage() {
                                 }}
                                 rows={2}
                                 placeholder="请输入工作内容..."
-                                className="w-full p-1.5 sm:p-2 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-xs sm:text-sm transition-all"
                               />
-                            </div>
+                              <FieldError errors={[]} />
+                            </Field>
                           </div>
-                          <button
-                            type="button"
+                          <Tooltip>
+                            <TooltipTrigger render={<button type="button"
                             onClick={() => {
                               if (item.globalIndex !== -1) {
                                 removeWorkItem(item.globalIndex);
                               }
                             }}
-                            className="flex-shrink-0 h-8 w-8 sm:h-10 sm:w-10 flex items-center justify-center text-gray-500 hover:text-red-600 transition-colors"
+                            aria-label="删除工作项"
+                            className={cn(buttonVariants({ variant: "ghost", size: "icon" }))}
                           >
-                            <TrashIcon className="h-4 w-4 sm:h-5 sm:w-5" />
-                          </button>
+                            <TrashIcon data-icon="inline-start" />
+                          </button>} />
+                            <TooltipContent>删除工作项</TooltipContent>
+                          </Tooltip>
                         </div>
                       ))}
                     </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
             </div>
@@ -1276,36 +1297,37 @@ export default function NewProjectWeeklyReportPage() {
             <div className="w-full lg:w-1/3">
               <div className="sticky top-4">
                 <h3 className="text-base sm:text-lg font-semibold mb-2 text-gray-800 flex items-center">
-                  <EyeIcon className="mr-1.5 sm:mr-2 h-4 w-4 sm:h-5 sm:w-5" />实时预览
+                  <EyeIcon data-icon="inline-start" />实时预览
                 </h3>
-                <div className="bg-white shadow rounded-lg p-4 border border-gray-100">
+                <Card>
+                  <CardContent>
                   <div className="flex justify-between items-center mb-3 pb-2 border-b border-gray-100">
                     <div className="text-sm font-medium text-gray-700">
                       {year}年第{weekNumber}周
                     </div>
-                    <div className="flex items-center space-x-1">
-                      <button
+                    <div className="flex items-center gap-1">
+                      <Button variant="outline" size="sm"
                         type="button"
                         onClick={handleCopyMarkdown}
                         className="inline-flex items-center px-1 py-0.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                         title="复制为Markdown格式"
                       >
-                        <CopyIcon className="h-3 w-3 mr-0.5" />MD
-                      </button>
-                      <button
+                        <CopyIcon data-icon="inline-start" />MD
+                      </Button>
+                      <Button variant="outline" size="sm"
                         type="button"
                         onClick={handleCopyYaml}
                         className="inline-flex items-center px-1 py-0.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                         title="复制为YAML格式"
                       >
-                        <CopyIcon className="h-3 w-3 mr-0.5" />YML
-                      </button>
+                        <CopyIcon data-icon="inline-start" />YML
+                      </Button>
                     </div>
                   </div>
 
                   {/* 控制按钮区域 */}
                   <div className="flex flex-wrap items-center gap-1 mb-3 pb-2 border-b border-gray-100">
-                    <button
+                    <Button variant="outline" size="sm"
                       type="button"
                       onClick={() => setShowWorkItems(!showWorkItems)}
                       className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border ${
@@ -1315,11 +1337,11 @@ export default function NewProjectWeeklyReportPage() {
                       }`}
                       title={showWorkItems ? '隐藏工作项' : '显示工作项'}
                     >
-                      {showWorkItems ? <EyeIcon className="h-3 w-3 mr-1" /> : <EyeOffIcon className="h-3 w-3 mr-1" />}
+                      {showWorkItems ? <EyeIcon data-icon="inline-start" /> : <EyeOffIcon data-icon="inline-start" />}
                       工作项
-                    </button>
+                    </Button>
                     {showWorkItems && (
-                      <button
+                      <Button variant="outline" size="sm"
                         type="button"
                         onClick={() => setShowHierarchy(!showHierarchy)}
                         className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border ${
@@ -1330,14 +1352,14 @@ export default function NewProjectWeeklyReportPage() {
                         title={showHierarchy ? '隐藏层级' : '显示层级'}
                       >
                         层级
-                      </button>
+                      </Button>
                     )}
                   </div>
 
                   {(() => {
                     const previewContent = generatePreviewContent();
                     return previewContent && previewContent.length > 0 ? (
-                      <div className="space-y-2 max-h-96 overflow-y-auto">
+                      <div className="flex flex-col gap-2 max-h-96 overflow-y-auto">
                         {previewContent.map((projectData: any) => (
                           <div key={projectData.project.id} className="bg-blue-50 border border-blue-200 rounded p-2">
                             {/* 项目标题 */}
@@ -1346,7 +1368,7 @@ export default function NewProjectWeeklyReportPage() {
                             </div>
 
                             {/* 工作内容 */}
-                            <div className="space-y-2">
+                            <div className="flex flex-col gap-2">
                               {showWorkItems ? (
                                 <>
                                   {/* 显示工作项分组 */}
@@ -1357,7 +1379,7 @@ export default function NewProjectWeeklyReportPage() {
                                         <div className="text-xs font-medium text-blue-600 mb-1">
                                           {hierarchyItem.fullPath}
                                         </div>
-                                        <div className="space-y-0.5">
+                                        <div className="flex flex-col gap-0.5">
                                           {hierarchyItem.items.map((item: any, index: number) => (
                                             <div key={index} className="text-xs text-gray-700">
                                               {index + 1}. {item.content}
@@ -1373,7 +1395,7 @@ export default function NewProjectWeeklyReportPage() {
                                         <div className="text-xs font-medium text-blue-600 mb-1">
                                           {workItemData.workItem.name}
                                         </div>
-                                        <div className="space-y-0.5">
+                                        <div className="flex flex-col gap-0.5">
                                           {workItemData.items.map((item: any, index: number) => (
                                             <div key={index} className="text-xs text-gray-700">
                                               {index + 1}. {item.content}
@@ -1390,7 +1412,7 @@ export default function NewProjectWeeklyReportPage() {
                                       <div className="text-xs font-medium text-blue-600 mb-1">
                                         其他工作
                                       </div>
-                                      <div className="space-y-0.5">
+                                      <div className="flex flex-col gap-0.5">
                                         {projectData.directItems.map((item: any, index: number) => (
                                           <div key={index} className="text-xs text-gray-700">
                                             {index + 1}. {item.content}
@@ -1403,7 +1425,7 @@ export default function NewProjectWeeklyReportPage() {
                               ) : (
                                 // 隐藏工作项时：显示所有内容的简化视图
                                 <div className="bg-white border border-blue-100 rounded p-2">
-                                  <div className="space-y-0.5">
+                                  <div className="flex flex-col gap-0.5">
                                     {projectData.items.map((item: any, index: number) => (
                                       <div key={index} className="text-xs text-gray-700">
                                         {index + 1}. {item.content}
@@ -1417,13 +1439,16 @@ export default function NewProjectWeeklyReportPage() {
                         ))}
                       </div>
                     ) : (
-                      <div className="text-center text-gray-400 py-6 bg-gray-50 rounded border border-dashed border-gray-200">
-                        <p className="text-xs">预览将在此处显示</p>
-                        <p className="text-xs mt-1">请先添加工作项内容</p>
-                      </div>
+                      <Empty>
+                        <EmptyHeader>
+                          <EmptyTitle>预览将在此处显示</EmptyTitle>
+                          <EmptyDescription>请先添加工作项内容</EmptyDescription>
+                        </EmptyHeader>
+                      </Empty>
                     );
                   })()}
-                </div>
+                  </CardContent>
+                </Card>
               </div>
             </div>
           </div>

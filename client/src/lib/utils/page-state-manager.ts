@@ -35,12 +35,6 @@ export function initPageStateManager() {
     }
   };
   
-  // 处理页面刷新前的事件
-  const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-    // 这里我们不阻止正常的导航和刷新
-    // 但可以在这里保存额外的状态到sessionStorage
-  };
-  
   // 处理页面返回/前进导航
   const handlePopState = () => {
     // 在历史导航中恢复状态，而不是重新加载
@@ -49,13 +43,11 @@ export function initPageStateManager() {
 
   // 添加事件监听器
   document.addEventListener('visibilitychange', handleVisibilityChange);
-  window.addEventListener('beforeunload', handleBeforeUnload);
   window.addEventListener('popstate', handlePopState);
   
   // 返回清理函数，可以在需要时调用
   return () => {
     document.removeEventListener('visibilitychange', handleVisibilityChange);
-    window.removeEventListener('beforeunload', handleBeforeUnload);
     window.removeEventListener('popstate', handlePopState);
   };
 } 

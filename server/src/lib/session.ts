@@ -1,6 +1,6 @@
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { getDb, nowIso } from './database';
+import { getDb } from './database';
 import { signSession, verifySession } from './jwt';
 
 export const SESSION_COOKIE = 'daycraft_session';
@@ -22,7 +22,7 @@ type CookieSource = { cookies?: Record<string, string> };
 
 export async function createSessionCookie(user: CurrentUser): Promise<string> {
   const token = await signSession(
-    { sub: user.id, email: user.email },
+    { sub: user.id },
     getSessionSecret(),
     SESSION_MAX_AGE_SEC,
   );
@@ -105,13 +105,6 @@ export async function comparePassword(password: string, hash: string): Promise<b
   return bcrypt.compare(password, hash);
 }
 
-/** 登录成功后的通用收尾：更新 last_sign_in_at。 */
-export function touchSignIn(userId: string) {
-  getDb()
-    .prepare('UPDATE user_profiles SET last_sign_in_at = ?, updated_at = ? WHERE id = ?')
-    .run(nowIso(), nowIso(), userId);
-}
-
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -119,5 +112,3 @@ export function normalizeEmail(email: string): string {
 export function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
-
-export type { Request, Response };

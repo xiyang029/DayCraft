@@ -1,16 +1,27 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, Loader2Icon, TrashIcon, PencilIcon, FileTextIcon, AlertCircleIcon, CalendarIcon, EyeIcon, EyeOffIcon, CopyIcon, PresentationIcon } from "lucide-react";
+import { PlusIcon, ChevronLeftIcon, ChevronRightIcon, TrashIcon, PencilIcon, FileTextIcon, AlertCircleIcon, CalendarIcon, EyeIcon, EyeOffIcon, CopyIcon, XIcon } from "lucide-react";
 import { Link } from 'react-router-dom';
 import { useAuth } from "../contexts/auth-context";
 import { apiDelete, apiGet } from "../lib/api";
 import type { Project } from "../lib/db/types";
-import { format, parseISO, startOfWeek, endOfWeek, getWeek, getYear, addWeeks, subWeeks, isToday, startOfISOWeek, endOfISOWeek, getISOWeek } from "date-fns";
+import { format, parseISO, getYear, addWeeks, subWeeks, startOfISOWeek, endOfISOWeek, getISOWeek } from "date-fns";
 import { zhCN } from "date-fns/locale";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { useNavigate } from 'react-router-dom';
 import { usePersistentState } from "../lib/utils/page-persistence";
-import PresentationMode from "../components/project-reports/PresentationMode";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "cn";
+import { Badge } from "@/components/ui/badge";
+import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { Card, CardHeader, CardTitle, CardAction, CardContent } from "@/components/ui/card";
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction, AlertDialogCancel } from "@/components/ui/alert-dialog";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from "@/components/ui/select";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyContent, EmptyMedia } from "@/components/ui/empty";
+
 
 
 
@@ -20,7 +31,6 @@ interface ProjectWeeklyReportData {
   week_number: number;
   start_date: string;
   end_date: string;
-  is_plan?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -79,7 +89,6 @@ interface WeekReportWithItems {
   end_date: string;
   formattedPeriod: string;
   hasReport: boolean;
-  is_plan?: boolean;
   items: ProjectWeeklyReportItemData[];
 }
 
@@ -92,13 +101,45 @@ interface WeekData {
   report: WeekReportWithItems | null;
 }
 
+// 周/年导航图标按钮：Base UI Trigger 的 render 目标必须是原生元素（button + buttonVariants）
+function IconTooltipButton({
+  onClick,
+  label,
+  tooltip,
+  size = "icon",
+  children,
+}: {
+  onClick: () => void;
+  label: string;
+  tooltip: string;
+  size?: "icon" | "icon-sm";
+  children: React.ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={onClick}
+            aria-label={label}
+            className={cn(buttonVariants({ variant: "ghost", size }))}
+          >
+            {children}
+          </button>
+        }
+      />
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 export default function ProjectReportsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   
   // 状态管理 - 使用持久化状态
   const [currentWeek, setCurrentWeek] = usePersistentState('project-reports-current-week', new Date());
-  const [weekData, setWeekData] = usePersistentState<WeekData[]>('project-reports-week-data', []);
   const [isLoading, setIsLoading] = useState(false);
   const [reports, setReports] = usePersistentState<ProjectWeeklyReportData[]>('project-reports-reports', []);
   const [reportItems, setReportItems] = usePersistentState<{ [reportId: string]: ProjectWeeklyReportItemData[] }>('project-reports-items', {});
@@ -168,15 +209,12 @@ export default function ProjectReportsPage() {
 
   // 年度数据状态
   const [currentYear, setCurrentYear] = usePersistentState('project-reports-current-year', new Date().getFullYear());
-  const [yearlyData, setYearlyData] = useState<{ [week: number]: { hasReport: boolean; isPlan: boolean } }>({});
+  const [yearlyData, setYearlyData] = useState<{ [week: number]: { hasReport: boolean } }>({});
 
   // 项目筛选状态
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = usePersistentState('project-reports-selected-project', '');
 
-  // 演示模式状态
-  const [isPresentationMode, setIsPresentationMode] = useState(false);
-  
   // 计算当前周的数据
   const currentWeekData = useMemo(() => {
     const weekStart = startOfISOWeek(currentWeek);
@@ -201,7 +239,6 @@ export default function ProjectReportsPage() {
         end_date: report.end_date,
         formattedPeriod: `${format(parseISO(report.start_date), 'M月d日', { locale: zhCN })} - ${format(parseISO(report.end_date), 'M月d日', { locale: zhCN })}`,
         hasReport: true,
-        is_plan: report.is_plan,
         items
       } : null
     };
@@ -435,7 +472,7 @@ export default function ProjectReportsPage() {
 
     } catch (error) {
       console.error('获取项目周报失败', error);
-      toast.error('获取项目周报失败');
+      toast.add({ title: '获取项目周报失败', type: 'error' });
     } finally {
       // 清除请求状态
       isRequestingRef.current = false;
@@ -453,27 +490,26 @@ export default function ProjectReportsPage() {
       setProjects(data.projects || []);
     } catch (error) {
       console.error('获取项目失败', error);
-      toast.error('获取项目失败');
+      toast.add({ title: '获取项目失败', type: 'error' });
     }
   }, [user]);
 
   // 生成年度数据
   const generateYearlyData = useCallback(() => {
-    const yearData: { [week: number]: { hasReport: boolean; isPlan: boolean } } = {};
+    const yearData: { [week: number]: { hasReport: boolean } } = {};
 
     // 初始化所有周数据
     for (let week = 1; week <= 53; week++) {
-      yearData[week] = { hasReport: false, isPlan: false };
+      yearData[week] = { hasReport: false };
     }
 
     // 获取当前年份的所有周报
     const currentYearReports = reports.filter(report => report.year === currentYear);
 
-    // 标记有周报的周数和计划状态
+    // 标记有周报的周数
     currentYearReports.forEach(report => {
       yearData[report.week_number] = {
-        hasReport: true,
-        isPlan: report.is_plan || false
+        hasReport: true
       };
     });
 
@@ -501,12 +537,12 @@ export default function ProjectReportsPage() {
     try {
       await apiDelete(`/api/project-weekly-reports/${reportToDelete}`);
 
-      toast.success('项目周报删除成功');
+      toast.add({ title: '项目周报删除成功', type: 'success' });
       // 强制刷新数据
       fetchProjectReports(true);
     } catch (error) {
       console.error('删除项目周报失败', error);
-      toast.error('删除项目周报失败');
+      toast.add({ title: '删除项目周报失败', type: 'error' });
     } finally {
       setIsDeletingReport(false);
       setReportToDelete(null);
@@ -670,7 +706,7 @@ export default function ProjectReportsPage() {
       if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(text)
           .then(() => {
-            toast.success(successMessage);
+            toast.add({ title: successMessage, type: 'success' });
           })
           .catch(err => {
             console.error('复制失败:', err);
@@ -681,7 +717,7 @@ export default function ProjectReportsPage() {
       }
     } catch (err) {
       console.error('复制失败:', err);
-      toast.error('复制失败，请重试');
+      toast.add({ title: '复制失败，请重试', type: 'error' });
     }
   };
 
@@ -703,19 +739,19 @@ export default function ProjectReportsPage() {
       try {
         const successful = document.execCommand('copy');
         if (successful) {
-          toast.success(successMessage);
+          toast.add({ title: successMessage, type: 'success' });
         } else {
-          toast.error('复制失败，请重试');
+          toast.add({ title: '复制失败，请重试', type: 'error' });
         }
       } catch (err) {
         console.error('复制命令执行失败:', err);
-        toast.error('复制失败，请重试');
+        toast.add({ title: '复制失败，请重试', type: 'error' });
       }
 
       document.body.removeChild(textArea);
     } catch (err) {
       console.error('回退复制方法失败:', err);
-      toast.error('复制失败，请重试');
+      toast.add({ title: '复制失败，请重试', type: 'error' });
     }
   };
 
@@ -765,9 +801,9 @@ export default function ProjectReportsPage() {
   useEffect(() => {
     // 即使没有reports数据，也要初始化年度数据
     if (Object.keys(yearlyData).length === 0) {
-      const initialYearData: { [week: number]: { hasReport: boolean; isPlan: boolean } } = {};
+      const initialYearData: { [week: number]: { hasReport: boolean } } = {};
       for (let week = 1; week <= 53; week++) {
-        initialYearData[week] = { hasReport: false, isPlan: false };
+        initialYearData[week] = { hasReport: false };
       }
       setYearlyData(initialYearData);
     }
@@ -801,104 +837,84 @@ export default function ProjectReportsPage() {
   }, []);
 
   return (
-    <div className="space-y-4 md:space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-0">
-        <h1 className="text-xl md:text-2xl font-bold">项目周报管理</h1>
-      </div>
+    <div className="flex flex-col gap-6">
+      <h1 className="text-xl font-semibold tracking-tight">项目周报管理</h1>
 
       {/* 今日周报提醒 */}
       {todayWeekReportReminder && !todayWeekReportReminder.hasReport && (
-        <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-md">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <AlertCircleIcon className="h-5 w-5 text-blue-400" />
-            </div>
-            <div className="ml-3">
-              <p className="text-sm text-blue-700">
-                您本周还没有填写项目周报，
-                <Link
-                  to={`/dashboard/project-reports/new?year=${todayWeekReportReminder.year}&week=${todayWeekReportReminder.week_number}`}
-                  className="font-medium underline text-blue-700 hover:text-blue-600"
-                >
-                  立即填写
-                </Link>
-              </p>
-            </div>
-          </div>
-        </div>
+        <Alert>
+          <AlertCircleIcon data-icon="inline-start" />
+          <AlertDescription>
+            您本周还没有填写项目周报，
+            <Link
+              to={`/dashboard/project-reports/new?year=${todayWeekReportReminder.year}&week=${todayWeekReportReminder.week_number}`}
+              className="font-medium text-primary underline underline-offset-4 hover:text-primary/80"
+            >
+              立即填写
+            </Link>
+          </AlertDescription>
+        </Alert>
       )}
 
       {/* 年度填写情况展示 - 独立区域 */}
-      <div className="bg-white shadow rounded-lg">
-        <div className="px-3 md:px-4 py-3 md:py-5 sm:px-6">
-          <div className="flex justify-between items-center mb-3">
-            <h2 className="text-base md:text-lg font-medium text-gray-700">
-              {currentYear}年填写情况
-            </h2>
-            <div className="flex items-center text-xs text-gray-500">
-              <button
-                onClick={goToPreviousYear}
-                className="mr-1 p-1 rounded hover:bg-gray-100"
-                aria-label="上一年"
-              >
-                <ChevronLeftIcon className="h-3 w-3" />
-              </button>
-              <span className="font-medium text-gray-600 mx-2">
+      <Card>
+        <CardHeader className="border-b border-border">
+          <CardTitle>
+            {currentYear}年填写情况
+          </CardTitle>
+          <CardAction>
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <IconTooltipButton onClick={goToPreviousYear} label="上一年" tooltip="上一年">
+                <ChevronLeftIcon data-icon="inline-start" />
+              </IconTooltipButton>
+              <span className="font-medium text-foreground">
                 {currentYear}
               </span>
-              <button
-                onClick={goToNextYear}
-                className="ml-1 p-1 rounded hover:bg-gray-100"
-                aria-label="下一年"
-              >
-                <ChevronRightIcon className="h-3 w-3" />
-              </button>
-              <button
+              <IconTooltipButton onClick={goToNextYear} label="下一年" tooltip="下一年">
+                <ChevronRightIcon data-icon="inline-start" />
+              </IconTooltipButton>
+              <Button variant="outline" size="sm"
                 onClick={goToCurrentYear}
-                className="ml-2 px-2 py-1 text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded hover:bg-gray-100"
               >
                 今年
-              </button>
+              </Button>
             </div>
-          </div>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
 
           {/* 紧凑的周数展示 */}
-          <div className="space-y-1.5">
+          <div className="flex flex-col gap-1.5">
             {[
               { name: 'Q1', start: 1, end: 13 },
               { name: 'Q2', start: 14, end: 26 },
               { name: 'Q3', start: 27, end: 39 },
               { name: 'Q4', start: 40, end: 53 }
             ].map((quarter) => (
-              <div key={quarter.name} className="flex items-center space-x-2">
-                <div className="text-xs text-gray-500 font-medium w-6">{quarter.name}</div>
+              <div key={quarter.name} className="flex items-center gap-2">
+                <div className="w-6 text-xs font-medium text-muted-foreground">{quarter.name}</div>
                 <div className="flex flex-wrap gap-1">
                   {Array.from({ length: quarter.end - quarter.start + 1 }, (_, index) => {
                     const weekNumber = quarter.start + index;
-                    const weekData = yearlyData[weekNumber] || { hasReport: false, isPlan: false };
+                    const weekData = yearlyData[weekNumber] || { hasReport: false };
                     const isCurrentWeek = currentWeekData.year === currentYear && currentWeekData.week_number === weekNumber;
 
-                    let bgColor = 'bg-gray-200 hover:bg-gray-300';
+                    let bgColor = 'bg-muted hover:bg-muted/70';
                     let statusText = '未填写';
 
                     if (weekData.hasReport) {
-                      if (weekData.isPlan) {
-                        bgColor = 'bg-blue-500 hover:bg-blue-600';
-                        statusText = '已填写 (计划)';
-                      } else {
-                        bgColor = 'bg-green-500 hover:bg-green-600';
-                        statusText = '已填写';
-                      }
+                      bgColor = 'bg-success hover:bg-success/80';
+                      statusText = '已填写';
                     }
 
                     return (
                       <div
                         key={weekNumber}
-                        className={`
-                          w-3 h-3 rounded-sm cursor-pointer transition-colors duration-200
-                          ${bgColor}
-                          ${isCurrentWeek ? 'ring-1 ring-orange-500' : ''}
-                        `}
+                        className={cn(
+                          'size-3 cursor-pointer rounded-sm transition-colors duration-200',
+                          bgColor,
+                          isCurrentWeek && 'ring-1 ring-ring'
+                        )}
                         title={`第${weekNumber}周 (${statusText})`}
                         onClick={() => {
                           // 点击跳转到对应周
@@ -914,18 +930,14 @@ export default function ProjectReportsPage() {
           </div>
 
           {/* 统计信息 */}
-          <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
-            <div className="flex items-center space-x-3">
-              <div className="flex items-center">
-                <div className="w-2 h-2 bg-green-500 rounded-sm mr-1"></div>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1">
+                <div className="size-2 rounded-sm bg-success" />
                 <span>已填写</span>
               </div>
-              <div className="flex items-center">
-                <div className="w-2 h-2 bg-blue-500 rounded-sm mr-1"></div>
-                <span>计划</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-2 h-2 bg-gray-200 rounded-sm mr-1"></div>
+              <div className="flex items-center gap-1">
+                <div className="size-2 rounded-sm bg-muted" />
                 <span>未填写</span>
               </div>
             </div>
@@ -933,70 +945,73 @@ export default function ProjectReportsPage() {
               {Object.values(yearlyData).filter(data => data.hasReport).length} / 53 周
             </div>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* 周导航 */}
-      <div className="bg-white shadow rounded-lg">
-        <div className="px-3 md:px-4 py-3 md:py-5 sm:px-6 border-b border-gray-200">
+      <Card>
+        <CardHeader className="border-b border-border">
           {/* 移动端：垂直布局 */}
           <div className="block md:hidden">
             <div className="flex justify-between items-center mb-3">
               <h2 className="text-base font-medium">项目周报</h2>
-              <Link
-                to={`/dashboard/project-reports/new?year=${currentWeekData.year}&week=${currentWeekData.week_number}`}
-                className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-              >
-                <PlusIcon className="h-4 w-4 mr-1" />
+              <Button render={<Link to={`/dashboard/project-reports/new?year=${currentWeekData.year}&week=${currentWeekData.week_number}`} />}>
+                <PlusIcon data-icon="inline-start" />
                 新建周报
-              </Link>
+              </Button>
             </div>
 
             {/* 移动端控制区域 */}
-            <div className="space-y-3">
+            <div className="flex flex-col gap-3">
               {/* 项目筛选 - 移动端全宽 */}
-              <div>
-                <select
-                  value={selectedProjectId}
-                  onChange={(e) => setSelectedProjectId(e.target.value)}
-                  className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 bg-white focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">全部项目</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <Field>
+                <FieldLabel htmlFor="project-filter-mobile">筛选项目</FieldLabel>
+                <Select value={selectedProjectId || "__all"} onValueChange={(value: string | null) => setSelectedProjectId(value === null || value === "__all" ? "" : value)} items={[{ label: '全部项目', value: '__all' }, ...projects.map((project) => ({ label: project.name, value: project.id }))]}>
+                  <SelectTrigger id="project-filter-mobile" className="w-full">
+                    <SelectValue placeholder="全部项目" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="__all">全部项目</SelectItem>
+                      {projects.map((project) => (
+                        <SelectItem key={project.id} value={project.id}>
+                          {project.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <FieldError errors={[]} />
+              </Field>
 
               {/* 时间导航和本周按钮 */}
               <div className="flex justify-between items-center">
-                <div className="flex items-center text-sm text-gray-500">
-                  <button
-                    onClick={goToPreviousWeek}
-                    className="mr-2 p-2 rounded-full hover:bg-gray-100"
-                    aria-label="上一周"
-                  >
-                    <ChevronLeftIcon className="h-4 w-4" />
-                  </button>
-                  <span className="font-medium text-gray-700 whitespace-nowrap px-2">
+                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <IconTooltipButton onClick={goToPreviousWeek} label="上一周" tooltip="上一周">
+                    <ChevronLeftIcon data-icon="inline-start" />
+                  </IconTooltipButton>
+                  <span className="font-medium whitespace-nowrap text-foreground">
                     {currentWeekData.year}年第{currentWeekData.week_number}周
                   </span>
-                  <button
-                    onClick={goToNextWeek}
-                    className="ml-2 p-2 rounded-full hover:bg-gray-100"
-                    aria-label="下一周"
-                  >
-                    <ChevronRightIcon className="h-4 w-4" />
-                  </button>
+                  <IconTooltipButton onClick={goToNextWeek} label="下一周" tooltip="下一周">
+                    <ChevronRightIcon data-icon="inline-start" />
+                  </IconTooltipButton>
                 </div>
-                <button
-                  onClick={goToCurrentWeek}
-                  className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-                >
-                  本周
-                </button>
+                <div className="flex items-center gap-2">
+                  {selectedProjectId && (
+                    <Button variant="ghost" size="sm"
+                      onClick={() => setSelectedProjectId('')}
+                    >
+                      <XIcon data-icon="inline-start" />
+                      清除
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm"
+                    onClick={goToCurrentWeek}
+                  >
+                    本周
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -1006,226 +1021,170 @@ export default function ProjectReportsPage() {
             <h2 className="text-lg font-medium">
               项目周报
             </h2>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center gap-4">
               {/* 项目筛选 */}
-              <div className="flex items-center">
-                <select
-                  value={selectedProjectId}
-                  onChange={(e) => setSelectedProjectId(e.target.value)}
-                  className="text-sm border border-gray-300 rounded-md px-3 py-2 bg-white focus:ring-1 focus:ring-blue-500 focus:border-blue-500 min-w-40"
-                >
-                  <option value="">全部项目</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <Field orientation="horizontal">
+                <FieldLabel htmlFor="project-filter-desktop">筛选项目</FieldLabel>
+                <Select value={selectedProjectId || "__all"} onValueChange={(value: string | null) => setSelectedProjectId(value === null || value === "__all" ? "" : value)} items={[{ label: '全部项目', value: '__all' }, ...projects.map((project) => ({ label: project.name, value: project.id }))]}>
+                  <SelectTrigger id="project-filter-desktop">
+                    <SelectValue placeholder="全部项目" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="__all">全部项目</SelectItem>
+                      {projects.map((project) => (
+                        <SelectItem key={project.id} value={project.id}>
+                          {project.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                {selectedProjectId && (
+                  <IconTooltipButton onClick={() => setSelectedProjectId('')} label="清除筛选" tooltip="清除筛选" size="icon-sm">
+                    <XIcon data-icon="inline-start" />
+                  </IconTooltipButton>
+                )}
+                <FieldError errors={[]} />
+              </Field>
 
               {/* 时间导航 */}
-              <div className="flex items-center text-sm text-gray-500">
-                <button
-                  onClick={goToPreviousWeek}
-                  className="mr-2 p-1 rounded-full hover:bg-gray-100"
-                  aria-label="上一周"
-                >
-                  <ChevronLeftIcon className="h-4 w-4" />
-                </button>
-                <span className="font-medium text-gray-700 whitespace-nowrap">
+              <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <IconTooltipButton onClick={goToPreviousWeek} label="上一周" tooltip="上一周">
+                  <ChevronLeftIcon data-icon="inline-start" />
+                </IconTooltipButton>
+                <span className="font-medium whitespace-nowrap text-foreground">
                   {currentWeekData.year}年第{currentWeekData.week_number}周
                 </span>
-                <button
-                  onClick={goToNextWeek}
-                  className="ml-2 p-1 rounded-full hover:bg-gray-100"
-                  aria-label="下一周"
-                >
-                  <ChevronRightIcon className="h-4 w-4" />
-                </button>
+                <IconTooltipButton onClick={goToNextWeek} label="下一周" tooltip="下一周">
+                  <ChevronRightIcon data-icon="inline-start" />
+                </IconTooltipButton>
               </div>
 
               {/* 操作按钮 */}
-              <div className="flex items-center space-x-2">
-                <button
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm"
                   onClick={goToCurrentWeek}
-                  className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
                 >
                   本周
-                </button>
-                <Link
-                  to={`/dashboard/project-reports/new?year=${currentWeekData.year}&week=${currentWeekData.week_number}`}
-                  className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-                >
-                  <PlusIcon className="h-4 w-4 mr-1" />
+                </Button>
+                <Button render={<Link to={`/dashboard/project-reports/new?year=${currentWeekData.year}&week=${currentWeekData.week_number}`} />}>
+                  <PlusIcon data-icon="inline-start" />
                   新建周报
-                </Link>
+                </Button>
               </div>
             </div>
           </div>
-        </div>
+        </CardHeader>
 
         {/* 周报内容 */}
-        <div className="p-3 md:p-4">
+        <CardContent>
 
           {isLoading ? (
-            <div className="flex justify-center items-center p-6 md:p-12">
-              <div className="animate-spin rounded-full h-6 w-6 md:h-8 md:w-8 border-t-2 border-b-2 border-blue-500"></div>
-              <span className="ml-2 text-sm md:text-base text-gray-500">加载中...</span>
+            <div className="flex items-center justify-center gap-2 py-6 md:py-12">
+              <Spinner className="size-4" />
+              <span className="text-sm text-muted-foreground md:text-base">加载中...</span>
             </div>
           ) : currentWeekData.report ? (
-            <div>
-              {/* 筛选状态显示 */}
-              {selectedProjectId && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className="text-sm text-blue-700">
-                        正在筛选项目：
-                        <span className="font-medium ml-1">
-                          {projects.find(p => p.id === selectedProjectId)?.name || '未知项目'}
-                        </span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setSelectedProjectId('')}
-                      className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                    >
-                      清除筛选
-                    </button>
-                  </div>
-                </div>
-              )}
+            <div className="flex flex-col gap-3 md:gap-4">
 
-              {/* 周报标题和操作按钮 */}
-              <div className="mb-4">
-                {/* 第一行：标题行 */}
-                <div className="flex items-center mb-3">
-                  <div className="flex items-center space-x-2">
-                    <FileTextIcon className="h-5 w-5 text-blue-500" />
-                    <span className="text-sm md:text-base font-medium">
-                      {currentWeekData.report.formattedPeriod} 项目周报
-                      {selectedProjectId && (
-                        <span className="text-xs md:text-sm text-gray-500 ml-2">
-                          ({projects.find(p => p.id === selectedProjectId)?.name})
-                        </span>
-                      )}
+              {/* 第一行：标题行 */}
+              <div className="flex flex-wrap items-center gap-2">
+                <FileTextIcon className="size-5 text-primary" />
+                <span className="text-sm font-medium md:text-base">
+                  {currentWeekData.report.formattedPeriod} 项目周报
+                  {selectedProjectId && (
+                    <span className="ml-2 text-xs text-muted-foreground md:text-sm">
+                      ({projects.find(p => p.id === selectedProjectId)?.name})
                     </span>
-                    {currentWeekData.report.is_plan && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                        项目计划
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* 第二行及以后：所有操作按钮，支持自动换行 */}
-                <div className="flex flex-wrap items-center gap-2">
-                  {/* 显示控制开关 */}
-                  <button
-                    onClick={() => setShowWorkItems(!showWorkItems)}
-                    className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border ${
-                      showWorkItems
-                        ? 'bg-blue-50 text-blue-700 border-blue-300'
-                        : 'bg-gray-50 text-gray-700 border-gray-300'
-                    }`}
-                    title={showWorkItems ? '隐藏工作项' : '显示工作项'}
-                  >
-                    {showWorkItems ? <EyeIcon className="h-3 w-3 mr-1" /> : <EyeOffIcon className="h-3 w-3 mr-1" />}
-                    工作项
-                  </button>
-
-                  {showWorkItems && (
-                    <button
-                      onClick={() => setShowHierarchy(!showHierarchy)}
-                      className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border ${
-                        showHierarchy
-                          ? 'bg-green-50 text-green-700 border-green-300'
-                          : 'bg-gray-50 text-gray-700 border-gray-300'
-                      }`}
-                      title={showHierarchy ? '隐藏层级' : '显示层级'}
-                    >
-                      层级
-                    </button>
                   )}
+                </span>
+              </div>
 
-                  {/* 复制按钮 */}
-                  <button
-                    onClick={() => handleCopyMarkdown(groupedProjectData)}
-                    className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                    title="复制为Markdown格式"
-                  >
-                    <CopyIcon className="h-3 w-3 mr-1" />
-                    MD
-                  </button>
+              {/* 第二行及以后：所有操作按钮，支持自动换行 */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* 显示控制开关 */}
+                <Button variant="outline" size="sm"
+                  onClick={() => setShowWorkItems(!showWorkItems)}
+                  className={showWorkItems ? 'border-primary/30 bg-accent text-primary' : undefined}
+                  title={showWorkItems ? '隐藏工作项' : '显示工作项'}
+                >
+                  {showWorkItems ? <EyeIcon data-icon="inline-start" /> : <EyeOffIcon data-icon="inline-start" />}
+                  工作项
+                </Button>
 
-                  <button
-                    onClick={() => handleCopyYaml(groupedProjectData)}
-                    className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                    title="复制为YAML格式"
+                {showWorkItems && (
+                  <Button variant="outline" size="sm"
+                    onClick={() => setShowHierarchy(!showHierarchy)}
+                    className={showHierarchy ? 'border-success/30 bg-success/10 text-success' : undefined}
+                    title={showHierarchy ? '隐藏层级' : '显示层级'}
                   >
-                    <CopyIcon className="h-3 w-3 mr-1" />
-                    YML
-                  </button>
+                    层级
+                  </Button>
+                )}
 
-                  {/* 演示模式按钮 */}
-                  <button
-                    onClick={() => setIsPresentationMode(true)}
-                    className="inline-flex items-center px-2 py-1 border border-blue-300 text-xs font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100"
-                    title="演示模式"
-                  >
-                    <PresentationIcon className="h-3 w-3 mr-1" />
-                    演示
-                  </button>
+                {/* 复制按钮 */}
+                <Button variant="outline" size="sm"
+                  onClick={() => handleCopyMarkdown(groupedProjectData)}
+                  title="复制为Markdown格式"
+                >
+                  <CopyIcon data-icon="inline-start" />
+                  MD
+                </Button>
 
-                  {/* 编辑和删除按钮（所有设备都显示） */}
-                  <Link
-                    to={`/dashboard/project-reports/new?year=${currentWeekData.year}&week=${currentWeekData.week_number}`}
-                    className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                  >
-                    <PencilIcon className="h-3 w-3 mr-1" />
-                    编辑
-                  </Link>
+                <Button variant="outline" size="sm"
+                  onClick={() => handleCopyYaml(groupedProjectData)}
+                  title="复制为YAML格式"
+                >
+                  <CopyIcon data-icon="inline-start" />
+                  YML
+                </Button>
 
-                  <button
-                    onClick={(e) => handleDeleteClick(e, currentWeekData.report!.id)}
-                    className="inline-flex items-center px-2 py-1 border border-red-300 text-xs font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100"
-                  >
-                    <TrashIcon className="h-3 w-3 mr-1" />
-                    删除
-                  </button>
-                </div>
+                {/* 编辑和删除按钮（所有设备都显示） */}
+                <Button variant="outline" size="sm"
+                  render={<Link to={`/dashboard/project-reports/new?year=${currentWeekData.year}&week=${currentWeekData.week_number}`} />}
+                >
+                  <PencilIcon data-icon="inline-start" />
+                  编辑
+                </Button>
+
+                <Button variant="destructive" size="sm"
+                  onClick={(e) => handleDeleteClick(e, currentWeekData.report!.id)}
+                >
+                  <TrashIcon data-icon="inline-start" />
+                  删除
+                </Button>
               </div>
               
               {/* 筛选结果统计 */}
               {selectedProjectId && (
-                <div className="text-xs text-gray-500 mb-3">
+                <div className="text-xs text-muted-foreground">
                   显示 {groupedProjectData.length} 个项目的工作内容
                 </div>
               )}
 
               {/* 周报条目 - 参考日报预览样式 */}
-              <div className="space-y-3 md:space-y-4">
+              <div className="flex flex-col gap-3 md:gap-4">
                 {groupedProjectData.length > 0 ? groupedProjectData.map((projectData) => (
-                  <div key={projectData.project.id} className="border-l-2 border-blue-500 pl-2 md:pl-4 py-1 md:py-2">
+                  <div key={projectData.project.id} className="flex flex-col gap-1 border-l-2 border-primary py-1 pl-2 md:gap-2 md:pl-4">
                     {/* 项目标题 - 参考日报样式 */}
-                    <div className="flex items-center mb-1 md:mb-2">
-                      <div className={`text-sm font-medium ${projectData.project.is_active === false ? 'text-gray-500' : 'text-blue-600'}`}>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <div className={cn('text-sm font-medium', projectData.project.is_active === false ? 'text-muted-foreground' : 'text-primary')}>
                         {projectData.project.name}
                       </div>
-                      <div className="text-sm text-gray-500 ml-1">
+                      <div className="text-sm text-muted-foreground">
                         ({projectData.project.code})
                       </div>
                       {projectData.project.is_active === false && (
-                        <span className="text-xs text-red-500 ml-2 px-1 py-0.5 bg-red-50 rounded">
+                        <Badge variant="destructive">
                           已删除
-                        </span>
+                        </Badge>
                       )}
                     </div>
 
                     {/* 项目内容 - 简化列表 */}
-                    <div>
-                      {/* 统一的工作内容列表 - 工作项单独一行，内容带序号 */}
-                      <div className="space-y-2 md:space-y-3">
+                    {/* 统一的工作内容列表 - 工作项单独一行，内容带序号 */}
+                    <div className="flex flex-col gap-2 md:gap-3">
                         {/* 按工作项分组的工作 */}
                         {showWorkItems && Object.keys(projectData.workItems).length > 0 && (
                           <>
@@ -1243,21 +1202,21 @@ export default function ProjectReportsPage() {
                                 );
 
                                 return (
-                                  <div key={hierarchyItem.id} className="text-xs md:text-sm">
+                                  <div key={hierarchyItem.id} className="flex flex-col gap-1 text-xs md:text-sm">
                                     {/* 工作项标题单独一行 */}
-                                    <div className={`font-medium mb-1 flex items-center ${isWorkItemDeleted ? 'text-gray-500' : 'text-blue-500'}`}>
+                                    <div className={cn('flex flex-wrap items-center gap-1.5 font-medium', isWorkItemDeleted ? 'text-muted-foreground' : 'text-primary')}>
                                       <span>{hierarchyItem.fullPath}</span>
                                       {isWorkItemDeleted && (
-                                        <span className="text-xs text-red-500 ml-2 px-1 py-0.5 bg-red-50 rounded">
+                                        <Badge variant="destructive">
                                           已删除
-                                        </span>
+                                        </Badge>
                                       )}
                                     </div>
                                     {/* 工作内容带序号 */}
-                                    <div className="ml-2 space-y-0.5">
+                                    <div className="ml-2 flex flex-col gap-0.5">
                                       {contentLines.map((line, index) => (
-                                        <div key={index} className="text-gray-600 flex items-start">
-                                          <span className="mr-2 text-blue-400 flex-shrink-0 font-medium">
+                                        <div key={index} className="flex items-start gap-2 text-foreground">
+                                          <span className="shrink-0 font-medium text-primary">
                                             {index + 1}.
                                           </span>
                                           <span className="break-words">{line.trim()}</span>
@@ -1283,16 +1242,16 @@ export default function ProjectReportsPage() {
                                     <div className={`font-medium mb-1 flex items-center ${isWorkItemDeleted ? 'text-gray-500' : 'text-blue-500'}`}>
                                       <span>{workItemData.workItem.name}</span>
                                       {isWorkItemDeleted && (
-                                        <span className="text-xs text-red-500 ml-2 px-1 py-0.5 bg-red-50 rounded">
+                                        <Badge variant="destructive" className="ml-2">
                                           已删除
-                                        </span>
+                                        </Badge>
                                       )}
                                     </div>
                                     {/* 工作内容带序号 */}
-                                    <div className="ml-2 space-y-0.5">
+                                    <div className="flex flex-col ml-2 gap-0.5">
                                       {contentLines.map((line, index) => (
                                         <div key={index} className="text-gray-600 flex items-start">
-                                          <span className="mr-2 text-blue-400 flex-shrink-0 font-medium">
+                                          <span className="mr-2 text-blue-400 shrink-0 font-medium">
                                             {index + 1}.
                                           </span>
                                           <span className="break-words">{line.trim()}</span>
@@ -1309,7 +1268,7 @@ export default function ProjectReportsPage() {
                         {/* 当隐藏工作项时，显示所有内容的简化视图 */}
                         {!showWorkItems && (Object.keys(projectData.workItems).length > 0 || projectData.directItems.length > 0) && (
                           <div className="text-xs md:text-sm">
-                            <div className="space-y-0.5">
+                            <div className="flex flex-col gap-0.5">
                               {[
                                 // 工作项内容
                                 ...Object.values(projectData.workItems).flatMap(workItemData =>
@@ -1319,7 +1278,7 @@ export default function ProjectReportsPage() {
                                 ...projectData.directItems.map(item => item.content.trim()).filter(content => content)
                               ].map((line, index) => (
                                 <div key={index} className="text-gray-600 flex items-start">
-                                  <span className="mr-2 text-blue-400 flex-shrink-0 font-medium">
+                                  <span className="mr-2 text-blue-400 shrink-0 font-medium">
                                     {index + 1}.
                                   </span>
                                   <span className="break-words">{line}</span>
@@ -1337,10 +1296,10 @@ export default function ProjectReportsPage() {
                               其他工作
                             </div>
                             {/* 其他工作内容带序号 */}
-                            <div className="ml-2 space-y-0.5">
+                            <div className="flex flex-col ml-2 gap-0.5">
                               {projectData.directItems.map((item, index) => (
                                 <div key={item.id} className="text-gray-600 flex items-start">
-                                  <span className="mr-2 text-blue-400 flex-shrink-0 font-medium">
+                                  <span className="mr-2 text-blue-400 shrink-0 font-medium">
                                     {index + 1}.
                                   </span>
                                   <span className="break-words">{item.content}</span>
@@ -1351,90 +1310,71 @@ export default function ProjectReportsPage() {
                         )}
                       </div>
                     </div>
-                  </div>
                 )) : (
                   /* 筛选后无结果的提示 */
                   selectedProjectId && (
-                    <div className="text-center py-8">
-                      <div className="mx-auto h-12 w-12 text-gray-400 mb-4">
-                        <svg className="w-full h-full" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                      </div>
-                      <h3 className="text-sm font-medium text-gray-900">该项目本周暂无工作内容</h3>
-                      <p className="mt-1 text-sm text-gray-500">
-                        项目"{projects.find(p => p.id === selectedProjectId)?.name}"在本周没有记录工作内容
-                      </p>
-                      <div className="mt-4">
-                        <button
-                          onClick={() => setSelectedProjectId('')}
-                          className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-                        >
-                          查看所有项目
-                        </button>
-                      </div>
-                    </div>
+                    <Empty>
+                      <EmptyHeader>
+                        <EmptyTitle>该项目本周暂无工作内容</EmptyTitle>
+                        <EmptyDescription>
+                          项目"{projects.find(p => p.id === selectedProjectId)?.name}"在本周没有记录工作内容
+                        </EmptyDescription>
+                      </EmptyHeader>
+                      <Button variant="outline" size="sm"
+                        onClick={() => setSelectedProjectId('')}
+                      >
+                        查看所有项目
+                      </Button>
+                    </Empty>
                   )
                 )}
               </div>
             </div>
           ) : (
-            <div className="text-center py-8">
-              <CalendarIcon className="mx-auto h-12 w-12 text-gray-400" />
-              <h3 className="mt-2 text-sm font-medium text-gray-900">暂无项目周报</h3>
-              <p className="mt-1 text-sm text-gray-500">
-                点击上方"新建周报"按钮开始填写本周的项目周报
-              </p>
-            </div>
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <CalendarIcon data-icon="inline-start" />
+                </EmptyMedia>
+                <EmptyTitle>暂无项目周报</EmptyTitle>
+                <EmptyDescription>
+                  点击上方"新建周报"按钮开始填写本周的项目周报
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* 删除确认对话框 */}
-      {confirmDeleteOpen && (
-        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-3 md:p-6 max-w-md w-full mx-3 md:mx-4">
-            <div className="mb-2 md:mb-4">
-              <h3 className="text-base md:text-lg font-medium text-gray-900">确认删除</h3>
-            </div>
-            <div className="mb-4 md:mb-6">
-              <p className="text-xs md:text-sm text-gray-700">确定要删除这个项目周报吗？此操作无法撤销。</p>
-            </div>
-            <div className="flex justify-end space-x-2 md:space-x-3">
-              <button
-                onClick={handleCancelDelete}
-                className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-gray-300 text-xs md:text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                disabled={isDeletingReport}
-              >
-                取消
-              </button>
-              <button
-                onClick={handleConfirmDelete}
-                className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-transparent text-xs md:text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
-                disabled={isDeletingReport}
-              >
-                {isDeletingReport ? (
-                  <>
-                    <Loader2Icon className="h-3 w-3 md:h-4 md:w-4 mr-1 animate-spin" />
-                    删除中...
-                  </>
-                ) : (
-                  "确认删除"
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={(open) => { if (!open) handleCancelDelete(); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>确定要删除这个项目周报吗？此操作无法撤销。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelDelete} disabled={isDeletingReport}>
+              取消
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={handleConfirmDelete}
+              disabled={isDeletingReport}
+            >
+              {isDeletingReport ? (
+                <>
+                  <Spinner data-icon="inline-start" />
+                  删除中...
+                </>
+              ) : (
+                "确认删除"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-      {/* 演示模式组件 */}
-      <PresentationMode
-        isOpen={isPresentationMode}
-        onClose={() => setIsPresentationMode(false)}
-        reportData={groupedProjectData}
-        reportPeriod={currentWeekData.report?.formattedPeriod || ''}
-        isPlan={currentWeekData.report?.is_plan || false}
-      />
     </div>
   );
 }

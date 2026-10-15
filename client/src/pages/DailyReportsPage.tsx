@@ -1,16 +1,27 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { PlusIcon, SearchIcon, ChevronLeftIcon, ChevronRightIcon, Loader2Icon, TrashIcon, PencilIcon, CopyIcon, XIcon, AlertCircleIcon, CalendarIcon, FileTextIcon, ClipboardListIcon } from "lucide-react";
-import { Link } from 'react-router-dom';
+import { ChevronLeftIcon, ChevronRightIcon, TrashIcon, PencilIcon, CopyIcon, AlertCircleIcon, FileTextIcon } from "lucide-react";
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from "../contexts/auth-context";
 import { apiDelete, apiGet } from "../lib/api";
-import type { Project, DailyReport, ReportItem } from "../lib/db/types";
-import { format, parseISO, startOfWeek, endOfWeek, eachDayOfInterval, getWeek, getMonth, getYear, addWeeks, subWeeks, isSameDay, isToday } from "date-fns";
+import type { Project } from "../lib/db/types";
+import { format, parseISO, startOfWeek, endOfWeek, eachDayOfInterval, getWeek, getMonth, getYear, isToday } from "date-fns";
 import { zhCN } from "date-fns/locale";
-import { toast } from "sonner";
-import { useNavigate } from 'react-router-dom';
+import { toast } from "@/components/ui/toast";
 import { usePersistentState } from "../lib/utils/page-persistence";
 import { isAdjustedWorkday, isWorkdayCN } from "../lib/utils/workday";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "cn";
+import { Badge } from "@/components/ui/badge";
+import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction, AlertDialogCancel } from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import DailyReportDialog from "./DailyReportDialog";
+
 
 interface ReportWithItems {
   id: string;
@@ -18,23 +29,12 @@ interface ReportWithItems {
   day: string;
   status: string;
   items: ReportItemWithProject[];
-  is_plan?: boolean; // 是否为工作计划
 }
 
 interface ReportItemWithProject {
   id: string;
   content: string;
   project: Project;
-}
-
-// 添加接口定义
-interface DailyReportData {
-  id: string;
-  date: string;
-  user_id: string;
-  created_at: string;
-  updated_at: string;
-  is_plan?: boolean; // 是否为工作计划
 }
 
 interface ReportItemData {
@@ -82,53 +82,44 @@ const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   maxWeekIndex
 }) => {
   return (
-    <div className="flex items-center text-xs md:text-sm text-gray-500 mb-2 md:mb-4">
-      <button 
+    <div className="flex items-center gap-1 text-xs text-muted-foreground md:gap-2 md:text-sm">
+      <Tooltip>
+<TooltipTrigger render={<button type="button"
         onClick={() => onWeekChange(currentWeekIndex + 1)}
         disabled={currentWeekIndex >= maxWeekIndex}
-        className="mr-1 md:mr-2 p-1 rounded-full hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+        className={cn(buttonVariants({ variant: "ghost", size: "icon" }))}
         aria-label="上一周"
       >
-        <ChevronLeftIcon className="h-3 w-3 md:h-4 md:w-4" />
-      </button>
-      <span className="font-medium text-gray-700 whitespace-nowrap">{year}年{month}月<span className="hidden md:inline"> (第{weekNumber}周)</span></span>
-      <button 
+        <ChevronLeftIcon data-icon="inline-start" />
+      </button>} />
+<TooltipContent>上一周</TooltipContent>
+</Tooltip>
+      <span className="font-medium whitespace-nowrap text-foreground">{year}年{month}月<span className="hidden md:inline"> (第{weekNumber}周)</span></span>
+      <Tooltip>
+<TooltipTrigger render={<button type="button"
         onClick={() => onWeekChange(currentWeekIndex - 1)}
         disabled={currentWeekIndex <= 0}
-        className="ml-1 md:ml-2 p-1 rounded-full hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+        className={cn(buttonVariants({ variant: "ghost", size: "icon" }))}
         aria-label="下一周"
       >
-        <ChevronRightIcon className="h-3 w-3 md:h-4 md:w-4" />
-      </button>
+        <ChevronRightIcon data-icon="inline-start" />
+      </button>} />
+<TooltipContent>下一周</TooltipContent>
+</Tooltip>
     </div>
   );
 };
 
-// 添加待办相关接口
-interface Todo {
-  id: string;
-  content: string;
-  priority: string;
-  due_date: string;
-  status: string;
-  completed_at?: string;
-  project_id: string;
-}
-
-interface ProjectWithTodos {
-  id: string;
-  name: string;
-  code: string;
-  todos: Todo[];
-}
-
 export default function DailyReportsPage() {
-  const navigate = useNavigate();
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
   const [isDeletingReport, setIsDeletingReport] = useState(false);
   const [reportToDelete, setReportToDelete] = useState<string | null>(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  // 新建/编辑日报弹窗（替代原 /daily-reports/new 独立页面）
+  const [dialogDate, setDialogDate] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   
   // 使用持久化状态替代普通状态
   const [reports, setReports] = usePersistentState<ReportWithItems[]>('daily-reports-reports', []);
@@ -150,8 +141,6 @@ export default function DailyReportsPage() {
   // 移除数据刷新间隔
   // 添加请求状态跟踪，避免重复请求
   const isRequestingRef = useRef<Record<string, boolean>>({});
-  // 防抖延迟
-  const DEBOUNCE_DELAY = 300;
 
   // 当前选中的周数据
   const currentWeekData = useMemo(() => {
@@ -363,7 +352,6 @@ export default function DailyReportsPage() {
           day,
           status: '已提交', // 日报状态，目前只有一种状态
           items,
-          is_plan: report.is_plan
         });
       }
       
@@ -376,7 +364,7 @@ export default function DailyReportsPage() {
       
     } catch (error) {
       console.error('加载数据失败', error);
-      toast.error('加载数据失败');
+      toast.add({ title: '加载数据失败', type: 'error' });
     } finally {
       // 清除请求状态
       isRequestingRef.current[weekKey] = false;
@@ -384,16 +372,43 @@ export default function DailyReportsPage() {
     }
   }, [user, setProjects, updateWeekData]);
 
+  // 打开新建/编辑日报弹窗
+  const openReportDialog = (date: string) => {
+    setDialogDate(date);
+    setDialogOpen(true);
+  };
+
+  // 弹窗保存成功后刷新列表
+  const handleDialogSaved = useCallback(() => {
+    if (currentWeekData) {
+      const weekKey = `${currentWeekData.year}-${currentWeekData.weekNumber}`;
+      weekDataLoadedRef.current[weekKey] = false;
+      fetchWeekReports(currentWeekData, true);
+    }
+    checkTodayReport();
+  }, [currentWeekData, fetchWeekReports, checkTodayReport]);
+
   // 加载项目和日报数据
   useEffect(() => {
     if (!user) return;
-    
+
     // 初始化周数据结构
     initWeekData();
-    
+
     // 检查今天的日报状态
     checkTodayReport();
   }, [user]);
+
+  // 深链直达：/dashboard/daily-reports?edit=yyyy-MM-dd 直接打开编辑弹窗
+  useEffect(() => {
+    const edit = searchParams.get('edit');
+    if (edit && /^\d{4}-\d{2}-\d{2}$/.test(edit)) {
+      setDialogDate(edit);
+      setDialogOpen(true);
+      setSearchParams({}, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 仅在首次加载和没有强制刷新的情况下加载该周的日报数据
   const isFirstLoadRef = useRef<Record<number, boolean>>({});
@@ -448,36 +463,6 @@ export default function DailyReportsPage() {
 
 
 
-  // 切换到上一周
-  const handlePreviousWeek = () => {
-    if (currentWeekIndex < weekData.length - 1) {
-      const newIndex = currentWeekIndex + 1;
-      setCurrentWeekIndex(newIndex);
-      
-      // 强制刷新数据
-      if (user && weekData[newIndex]) {
-        setTimeout(() => {
-          fetchWeekReports(weekData[newIndex], true);
-        }, 10);
-      }
-    }
-  };
-
-  // 切换到下一周
-  const handleNextWeek = () => {
-    if (currentWeekIndex > 0) {
-      const newIndex = currentWeekIndex - 1;
-      setCurrentWeekIndex(newIndex);
-      
-      // 强制刷新数据
-      if (user && weekData[newIndex]) {
-        setTimeout(() => {
-          fetchWeekReports(weekData[newIndex], true);
-        }, 10);
-      }
-    }
-  };
-
   // 显示删除确认对话框
   const handleDeleteClick = (e: React.MouseEvent, reportId: string) => {
     e.stopPropagation();
@@ -503,7 +488,7 @@ export default function DailyReportsPage() {
 
       // 从状态中移除被删除的日报
       setReports(prev => prev.filter(report => report.id !== reportToDelete));
-      toast.success('日报删除成功');
+      toast.add({ title: '日报删除成功', type: 'success' });
       
       // 立即刷新当前周的数据，确保UI显示正确
       if (currentWeekData) {
@@ -517,7 +502,7 @@ export default function DailyReportsPage() {
       
     } catch (error) {
       console.error('删除日报时出错', error);
-      toast.error(`删除日报失败: ${error instanceof Error ? error.message : '未知错误'}`);
+      toast.add({ title: `删除日报失败: ${error instanceof Error ? error.message : '未知错误'}`, type: 'error' });
     } finally {
       setIsDeletingReport(false);
       setReportToDelete(null);
@@ -525,10 +510,11 @@ export default function DailyReportsPage() {
     }
   };
 
-  // 编辑日报
+  // 编辑日报（打开弹窗；若预览弹窗开着则先关闭）
   const handleEditClick = (e: React.MouseEvent, date: string) => {
     e.stopPropagation();
-    navigate(`/dashboard/daily-reports/new?date=${date}`);
+    closePreview();
+    openReportDialog(date);
   };
 
   // 复制日报内容为YAML格式
@@ -559,7 +545,7 @@ export default function DailyReportsPage() {
         // 安全上下文中使用标准 Clipboard API
         navigator.clipboard.writeText(yamlContent)
           .then(() => {
-            toast.success('日报内容已复制到剪贴板');
+            toast.add({ title: '日报内容已复制到剪贴板', type: 'success' });
           })
           .catch(err => {
             console.error('复制失败:', err);
@@ -571,7 +557,7 @@ export default function DailyReportsPage() {
       }
     } catch (err) {
       console.error('复制失败:', err);
-      toast.error('复制失败，请重试');
+      toast.add({ title: '复制失败，请重试', type: 'error' });
     }
   };
 
@@ -594,19 +580,19 @@ export default function DailyReportsPage() {
       try {
         const successful = document.execCommand('copy');
         if (successful) {
-          toast.success('日报内容已复制到剪贴板');
+          toast.add({ title: '日报内容已复制到剪贴板', type: 'success' });
         } else {
-          toast.error('复制失败，请重试');
+          toast.add({ title: '复制失败，请重试', type: 'error' });
         }
       } catch (err) {
         console.error('复制命令执行失败:', err);
-        toast.error('复制失败，请重试');
+        toast.add({ title: '复制失败，请重试', type: 'error' });
       }
       
       document.body.removeChild(textArea);
     } catch (err) {
       console.error('回退复制方法失败:', err);
-      toast.error('复制失败，请重试');
+      toast.add({ title: '复制失败，请重试', type: 'error' });
     }
   };
 
@@ -626,6 +612,49 @@ export default function DailyReportsPage() {
     });
     
     return Array.from(projectMap.values());
+  };
+
+  // 项目工作条目渲染：日报列表紧凑版与预览详情版共用（detail 为 true 时输出预览的完整条目列表）
+  const renderProjectWork = (report: ReportWithItems, project: Project, detail = false) => {
+    if (detail) {
+      return (
+        <div key={project.id} className="border-l-2 border-primary/30 py-1 pl-2 md:py-2 md:pl-4">
+          <div className="mb-1 flex items-center md:mb-2">
+            <div className="text-sm font-medium text-primary">
+              {project.name}
+            </div>
+            <div className="ml-1 text-sm text-muted-foreground">
+              ({project.code})
+            </div>
+          </div>
+          <ul className="flex list-disc flex-col gap-1 pl-4 marker:text-primary md:gap-2">
+            {getProjectItems(report, project.id).map((item, idx) => (
+              <li key={idx} className="text-xs break-words text-foreground md:text-sm">
+                {item.content}
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
+
+    return (
+      <div key={project.id} className="border-l-2 border-primary/30 py-0.5 pl-2">
+        <div className="mb-0.5 flex items-center">
+          <div className="text-sm font-medium text-primary">
+            {project.name}
+          </div>
+          <div className="ml-1 text-sm text-muted-foreground">
+            ({project.code})
+          </div>
+        </div>
+        <div className="line-clamp-1 text-sm text-muted-foreground">
+          {getProjectItems(report, project.id)
+            .map(item => item.content)
+            .join('；')}
+        </div>
+      </div>
+    );
   };
 
   // 处理日报选择，显示预览
@@ -671,7 +700,7 @@ export default function DailyReportsPage() {
         // 安全上下文中使用标准 Clipboard API
         navigator.clipboard.writeText(yamlContent)
           .then(() => {
-            toast.success('日报内容已复制到剪贴板');
+            toast.add({ title: '日报内容已复制到剪贴板', type: 'success' });
           })
           .catch(err => {
             console.error('复制失败:', err);
@@ -683,7 +712,7 @@ export default function DailyReportsPage() {
       }
     } catch (err) {
       console.error('复制失败:', err);
-      toast.error('复制失败，请重试');
+      toast.add({ title: '复制失败，请重试', type: 'error' });
     }
   };
 
@@ -691,175 +720,140 @@ export default function DailyReportsPage() {
 
 
   return (
-    <div className="space-y-4 md:space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-0">
-        <h1 className="text-xl md:text-2xl font-bold">日报管理</h1>
-      </div>
+    <div className="flex flex-col gap-6">
+      <h1 className="text-xl font-semibold tracking-tight">日报管理</h1>
 
       {/* 今日日报提醒 */}
       {todayReportReminder && !todayReportReminder.hasReport && (
-        <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-md">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <AlertCircleIcon className="h-5 w-5 text-blue-400" />
-            </div>
-            <div className="ml-3">
-              <p className="text-sm text-blue-700">
-                您今天还没有填写日报，
-                <Link 
-                  to={`/dashboard/daily-reports/new?date=${todayReportReminder.date}`}
-                  className="font-medium underline text-blue-700 hover:text-blue-600"
-                >
-                  立即填写
-                </Link>
-              </p>
-            </div>
-          </div>
-        </div>
+        <Alert>
+          <AlertCircleIcon data-icon="inline-start" />
+          <AlertDescription>
+            您今天还没有填写日报，
+            <Button
+              variant="link"
+              size="sm"
+              className="h-auto px-1 font-medium text-primary"
+              onClick={() => openReportDialog(todayReportReminder.date)}
+            >
+              立即填写
+            </Button>
+          </AlertDescription>
+        </Alert>
       )}
 
       {/* 日报列表 */}
-      <div className="bg-white shadow rounded-lg">
-        <div className="px-3 md:px-4 py-3 md:py-5 sm:px-6 border-b border-gray-200">
-          <div className="flex justify-between items-center">
-            <h2 className="text-base md:text-lg font-medium">日报列表</h2>
-            <div className="flex items-center gap-2">
-              {currentWeekData && (
-                <Breadcrumbs 
-                  year={currentYear}
-                  month={currentMonth}
-                  weekNumber={currentWeekData.weekNumber}
-                  onWeekChange={handleWeekChange}
-                  currentWeekIndex={currentWeekIndex}
-                  maxWeekIndex={weekData.length - 1}
-                />
-              )}
-            </div>
+      <Card>
+        <CardHeader className="border-b border-border">
+          <div className="flex items-center justify-between">
+            <CardTitle>日报列表</CardTitle>
+            {currentWeekData && (
+              <Breadcrumbs
+                year={currentYear}
+                month={currentMonth}
+                weekNumber={currentWeekData.weekNumber}
+                onWeekChange={handleWeekChange}
+                currentWeekIndex={currentWeekIndex}
+                maxWeekIndex={weekData.length - 1}
+              />
+            )}
           </div>
-        </div>
+        </CardHeader>
 
+        <CardContent>
         {isLoading ? (
-          <div className="flex justify-center items-center p-6 md:p-12">
-            <div className="animate-spin rounded-full h-6 w-6 md:h-8 md:w-8 border-t-2 border-b-2 border-blue-500"></div>
-            <span className="ml-2 text-sm md:text-base text-gray-500">加载中...</span>
+          <div className="flex items-center justify-center gap-2 p-6 md:p-12">
+            <Spinner className="size-5" />
+            <span className="text-sm text-muted-foreground md:text-base">加载中...</span>
           </div>
         ) : weekData.length === 0 ? (
-          <div className="p-4 md:p-8 text-center">
-            <p className="text-sm md:text-base text-gray-500">暂无日报数据</p>
-          </div>
+          <Empty>
+            <EmptyHeader>
+              <EmptyTitle>暂无日报数据</EmptyTitle>
+            </EmptyHeader>
+          </Empty>
         ) : (
-          <div>
-            <ul className="divide-y divide-gray-200">
+          <ul className="divide-y divide-border">
                 {currentWeekData && currentWeekData.days.map((day) => {
                   const isCurrentDay = isToday(parseISO(day.date));
                   return (
                   <li 
                       key={day.date} 
-                      className={`p-3 md:p-4 ${day.hasReport ? 'cursor-pointer' : ''} ${isCurrentDay ? 'bg-blue-50' : ''}`}
+                      className={cn('border-l-2 border-transparent p-3 md:p-4', day.hasReport && 'cursor-pointer', isCurrentDay && 'border-primary bg-accent')}
                       onClick={() => day.hasReport && day.report && handleReportSelect(day.report.id)}
                     >
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-                      <div className="flex items-start flex-grow">
-                        <div className="flex-shrink-0">
-                          <FileTextIcon className={`h-5 w-5 md:h-6 md:w-6 ${day.hasReport ? 'text-blue-500' : 'text-gray-400'}`} />
+                      <div className="flex items-start grow">
+                        <div className="shrink-0">
+                          <FileTextIcon className={cn('size-5 md:size-6', day.hasReport ? 'text-primary' : 'text-muted-foreground')} />
                         </div>
-                        <div className="ml-3 md:ml-4 flex-grow">
+                        <div className="ml-3 md:ml-4 grow">
                           <div className="flex items-center justify-between w-full">
                             <div className="flex flex-wrap items-center gap-1 md:gap-2">
-                              <h3 className={`text-sm md:text-base font-medium ${isCurrentDay ? 'text-blue-700 font-bold' : 'text-gray-900'}`}>
+                              <h3 className={cn('text-sm md:text-base font-medium', isCurrentDay ? 'font-semibold text-primary' : 'text-foreground')}>
                                 {format(parseISO(day.date), 'MM-dd')} <span className="hidden md:inline">({day.day})</span>
                               </h3>
                               {isCurrentDay && (
-                                <span className="inline-flex items-center px-1.5 md:px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                <Badge variant="secondary">
                                 今天
-                              </span>
+                              </Badge>
                             )}
                               {day.isAdjusted && (
-                                <span className="inline-flex items-center px-1.5 md:px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                <Badge variant="secondary">
                                 调休上班
-                              </span>
+                              </Badge>
                             )}
                               {day.hasReport ? (
-                                <>
-                                  {day.report?.is_plan ? (
-                                    <span className="inline-flex items-center px-1.5 md:px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                      已计划
-                              </span>
-                                  ) : (
-                                    <span className="inline-flex items-center px-1.5 md:px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            已提交
-                          </span>
-                                  )}
-                                </>
-                        ) : (
-                                <span className={`inline-flex items-center px-1.5 md:px-2.5 py-0.5 rounded-full text-xs font-medium ${isCurrentDay ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>
+                                <Badge variant="default">
+                                  已提交
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary">
                             {isCurrentDay ? '今日待填' : '未提交'}
-                          </span>
+                          </Badge>
                         )}
                             </div>
-                            <div className="flex items-center space-x-1 md:space-x-2">
-                          <Link
-                            to={`/dashboard/daily-reports/new?date=${day.date}`}
-                                className={`inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-gray-300 text-xs md:text-sm font-medium rounded-md ${isCurrentDay ? 'text-blue-700 bg-blue-50 hover:bg-blue-100 border-blue-300' : 'text-gray-700 bg-white hover:bg-gray-50'}`}
+                            <div className="flex items-center gap-1 md:gap-2">
+                          <Button variant="outline" size="sm"
+                            onClick={(e) => { e.stopPropagation(); openReportDialog(day.date); }}
+                            className={isCurrentDay ? 'border-primary/30 text-primary' : undefined}
                             title={day.hasReport ? "编辑日报" : "创建日报"}
-                            onClick={(e) => e.stopPropagation()}
                           >
-                              <PencilIcon className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-1" />
+                              <PencilIcon data-icon="inline-start" />
                               {day.hasReport ? "编辑" : "填写"}
-                          </Link>
+                          </Button>
                           {day.hasReport && day.report && (
                             <>
-                              <button
+                              <Button variant="outline" size="sm"
                                 onClick={(e) => handleCopyReport(e, day.report!)}
-                                    className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-gray-300 text-xs md:text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                                 title="复制日报"
                               >
-                                  <CopyIcon className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-1" />
+                                  <CopyIcon data-icon="inline-start" />
                                   <span className="hidden md:inline">复制</span>
-                              </button>
-                              <button
+                              </Button>
+                              <Button variant="destructive" size="sm"
                                 onClick={(e) => handleDeleteClick(e, day.report!.id)}
-                                    className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-red-300 text-xs md:text-sm font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100"
                                 title="删除日报"
                               >
-                                  <TrashIcon className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-1" />
+                                  <TrashIcon data-icon="inline-start" />
                                   <span className="hidden md:inline">删除</span>
-                              </button>
+                              </Button>
                             </>
                           )}
                         </div>
                           </div>
                           
-                          <div className="mt-0.5 md:mt-1 flex items-center text-xs md:text-sm text-gray-500">
-                            <CalendarIcon className="h-3 w-3 md:h-4 md:w-4 mr-1" />
-                            <span className="hidden md:inline">{format(parseISO(day.date), 'yyyy年MM月dd日')}</span>
-                            <span className="inline md:hidden">{format(parseISO(day.date), 'yyyy年MM月dd日')}</span>
+                          <div className="mt-0.5 text-xs text-muted-foreground md:mt-1 md:text-sm">
+                            <span>{format(parseISO(day.date), 'yyyy年MM月dd日')}</span>
                           </div>
                           
                           {day.hasReport && day.report && (
-                            <div className="mt-1 md:mt-2 space-y-2">
+                            <div className="flex flex-col mt-1 md:mt-2 gap-2">
                               {getReportProjects(day.report).map(project => {
                                 // 使用非空断言确保TypeScript知道day.report不为null
                                 const report = day.report!;
                                 
-                                return (
-                                  <div key={project.id} className="border-l-2 border-blue-500 pl-2 py-0.5">
-                                    <div className="flex items-center mb-0.5">
-                                      <div className="text-sm font-medium text-blue-600">
-                                        {project.name}
-                                      </div>
-                                      <div className="text-sm text-gray-500 ml-1">
-                                        ({project.code})
-                                      </div>
-                                    </div>
-                                    <div className="text-sm text-gray-600 line-clamp-1">
-                                      {getProjectItems(report, project.id)
-                                        .map(item => item.content)
-                                        .join('；')}
-                                    </div>
-                                  </div>
-                  );
-                })}
+                                return renderProjectWork(report, project);
+                              })}
                             </div>
                           )}
                         </div>
@@ -868,166 +862,138 @@ export default function DailyReportsPage() {
                   </li>
                   );
                 })}
-            </ul>
-          </div>
+          </ul>
         )}
-      </div>
+        </CardContent>
+      </Card>
 
       {/* 周切换分页控件 */}
       {weekData.length > 0 && (
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 md:gap-4 mt-3 md:mt-4">
-          <div className="text-xs md:text-sm text-gray-700 text-center sm:text-left w-full sm:w-auto">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 md:gap-4">
+          <div className="text-xs md:text-sm text-foreground text-center sm:text-left w-full sm:w-auto">
             {currentWeekData && (
               <>
                 显示 <span className="font-medium">{currentWeekData.year}年第{currentWeekData.weekNumber}周</span> 的日报
               </>
             )}
           </div>
-          <div className="flex items-center space-x-1 md:space-x-2">
-            <button
+          <div className="flex items-center gap-1 md:gap-2">
+            <Tooltip>
+              <TooltipTrigger render={<button type="button"
               onClick={() => handleWeekChange(currentWeekIndex + 1)}
               disabled={currentWeekIndex >= weekData.length - 1}
-              className="relative inline-flex items-center px-2 py-1.5 md:py-2 rounded-md border border-gray-300 bg-white text-xs md:text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="上一周"
+              className={cn(buttonVariants({ variant: "ghost", size: "icon" }))}
             >
               <span className="sr-only">上一周</span>
-              <ChevronLeftIcon className="h-4 w-4 md:h-5 md:w-5" />
-            </button>
-            <span className="relative inline-flex items-center px-3 md:px-4 py-1.5 md:py-2 border border-gray-300 bg-white text-xs md:text-sm font-medium text-gray-700">
+              <ChevronLeftIcon data-icon="inline-start" />
+            </button>} />
+              <TooltipContent>上一周</TooltipContent>
+            </Tooltip>
+            <Badge variant="secondary" className="px-3 py-1.5 text-xs md:px-4 md:py-2 md:text-sm">
               {currentWeekIndex + 1} / {weekData.length}
-            </span>
-            <button
+            </Badge>
+            <Tooltip>
+              <TooltipTrigger render={<button type="button"
               onClick={() => handleWeekChange(currentWeekIndex - 1)}
               disabled={currentWeekIndex <= 0}
-              className="relative inline-flex items-center px-2 py-1.5 md:py-2 rounded-md border border-gray-300 bg-white text-xs md:text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="下一周"
+              className={cn(buttonVariants({ variant: "ghost", size: "icon" }))}
             >
               <span className="sr-only">下一周</span>
-              <ChevronRightIcon className="h-4 w-4 md:h-5 md:w-5" />
-            </button>
+              <ChevronRightIcon data-icon="inline-start" />
+            </button>} />
+              <TooltipContent>下一周</TooltipContent>
+            </Tooltip>
           </div>
         </div>
       )}
 
       {/* 日报预览弹窗 */}
-      {isPreviewOpen && previewReport && (
-        <div 
-          className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50 overflow-hidden"
-          onClick={closePreview}
-        >
-          <div 
-            className="bg-white rounded-lg p-3 md:p-6 max-w-4xl w-full mx-2 md:mx-4 max-h-[90vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-center mb-2 md:mb-4">
-              <h3 className="text-sm md:text-lg font-medium text-gray-900 truncate pr-2">
-                日报详情 - {previewReport.date} <span className="hidden md:inline">({previewReport.day})</span>
-              </h3>
-                <button
-                  onClick={closePreview}
-                className="text-gray-400 hover:text-gray-500"
-                >
-                <XIcon className="h-4 w-4 md:h-5 md:w-5" />
-                </button>
-              </div>
+      <Dialog open={isPreviewOpen} onOpenChange={(open) => { if (!open) closePreview(); }}>
+        {previewReport && (
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="truncate pr-2">
+              日报详情 - {previewReport.date} <span className="hidden md:inline">({previewReport.day})</span>
+            </DialogTitle>
+            <DialogDescription>查看日报的项目分组工作内容</DialogDescription>
+          </DialogHeader>
             
-            <div className="flex items-center mb-2 md:mb-4">
-              {previewReport.is_plan ? (
-                <span className="inline-flex items-center px-1.5 md:px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                  工作计划
-                </span>
-              ) : (
-                <span className="inline-flex items-center px-1.5 md:px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                  已提交
-                </span>
-              )}
+            <div className="flex items-center">
+              <Badge variant="default">
+                已提交
+              </Badge>
             </div>
             
-            <div className="flex-grow overflow-auto">
-              <div className="space-y-3 md:space-y-4">
-                {getReportProjects(previewReport).map(project => (
-                  <div key={project.id} className="border-l-2 border-blue-500 pl-2 md:pl-4 py-1 md:py-2">
-                    <div className="flex items-center mb-1 md:mb-2">
-                      <div className="text-sm font-medium text-blue-600">
-                        {project.name}
-                      </div>
-                      <div className="text-sm text-gray-500 ml-1">
-                        ({project.code})
-                      </div>
-                    </div>
-                    <ul className="space-y-1 md:space-y-2">
-                      {getProjectItems(previewReport, project.id).map((item, idx) => (
-                        <li key={idx} className="text-xs md:text-sm text-gray-600 flex items-start">
-                          <span className="mr-1 md:mr-2 text-blue-400 flex-shrink-0">•</span>
-                          <span className="break-words">{item.content}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
+            <div className="min-h-0 grow overflow-auto">
+              <div className="flex flex-col gap-3 md:gap-4">
+                {getReportProjects(previewReport).map(project =>
+                  renderProjectWork(previewReport, project, true)
+                )}
               </div>
             </div>
             
-            <div className="flex justify-end space-x-1 md:space-x-3 mt-3 md:mt-4">
-              <button
+            <DialogFooter className="gap-1 md:gap-3">
+              <Button variant="outline" size="sm"
                 onClick={handlePreviewCopy}
-                className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-gray-300 text-xs md:text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
               >
-                <CopyIcon className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-1" />
+                <CopyIcon data-icon="inline-start" />
                 复制内容
-              </button>
-              <button
+              </Button>
+              <Button variant="outline" size="sm"
                 onClick={(e) => handleEditClick(e, previewReport.date)}
-                className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-blue-300 text-xs md:text-sm font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100"
+                className="border-primary/30 text-primary"
               >
-                <PencilIcon className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-1" />
+                <PencilIcon data-icon="inline-start" />
                 编辑日报
-              </button>
-              <button
+              </Button>
+              <Button size="sm"
                 onClick={closePreview}
-                className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-transparent text-xs md:text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
               >
                 关闭
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              </Button>
+            </DialogFooter>
+        </DialogContent>
+        )}
+      </Dialog>
+
+      {/* 新建/编辑日报弹窗（替代原独立页面） */}
+      <DailyReportDialog
+        open={dialogOpen}
+        date={dialogDate}
+        onOpenChange={setDialogOpen}
+        onSaved={handleDialogSaved}
+      />
 
       {/* 删除确认对话框 */}
-      {confirmDeleteOpen && (
-        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-3 md:p-6 max-w-md w-full mx-3 md:mx-4">
-            <div className="mb-2 md:mb-4">
-              <h3 className="text-base md:text-lg font-medium text-gray-900">确认删除</h3>
-            </div>
-            <div className="mb-4 md:mb-6">
-              <p className="text-xs md:text-sm text-gray-700">确定要删除这份日报吗？此操作无法撤销。</p>
-            </div>
-            <div className="flex justify-end space-x-2 md:space-x-3">
-              <button
-                onClick={handleCancelDelete}
-                className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-gray-300 text-xs md:text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                disabled={isDeletingReport}
-              >
-                取消
-              </button>
-              <button
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={(open) => { if (!open) handleCancelDelete(); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>确定要删除这份日报吗？此操作无法撤销。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelDelete} disabled={isDeletingReport}>
+              取消
+            </AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
                 onClick={handleConfirmDelete}
-                className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-transparent text-xs md:text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
                 disabled={isDeletingReport}
               >
                 {isDeletingReport ? (
                   <>
-                    <Loader2Icon className="h-3 w-3 md:h-4 md:w-4 mr-1 animate-spin" />
+                    <Spinner data-icon="inline-start" />
                     删除中...
                   </>
                 ) : (
                   "确认删除"
                 )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 } 

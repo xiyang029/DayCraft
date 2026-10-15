@@ -1,20 +1,36 @@
-import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
-import { Button } from '../components/ui/button';
-import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
-import { Label } from '../components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { WorkItem } from '../lib/services/work-breakdown';
-import { workBreakdownService } from '../lib/services/work-breakdown';
-import { toast } from 'sonner';
-import { Loader2, MoveIcon, AlertTriangleIcon } from 'lucide-react';
+import { useState, useEffect } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "../components/ui/dialog";
+import { Alert, AlertTitle } from "../components/ui/alert";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { RadioGroup, RadioGroupItem } from "../components/ui/radio-group";
+import { Field, FieldError, FieldLabel } from "../components/ui/field";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
+import { Spinner } from "../components/ui/spinner";
+import { WorkItem } from "../lib/services/work-breakdown";
+import { workBreakdownService } from "../lib/services/work-breakdown";
+import { toast } from "@/components/ui/toast";
+import { MoveIcon, AlertTriangleIcon } from "lucide-react";
 
 interface MoveWorkItemDialogProps {
   isOpen: boolean;
   onClose: () => void;
   workItem: WorkItem | null;
   projectId: string;
-  userId: string;
   onMoveComplete: () => void;
   potentialParents?: PotentialParent[]; // 预先计算好的可选父级列表
 }
@@ -31,13 +47,14 @@ export default function MoveWorkItemDialog({
   onClose,
   workItem,
   projectId,
-  userId,
   onMoveComplete,
-  potentialParents: propsParents = []
+  potentialParents: propsParents = [],
 }: MoveWorkItemDialogProps) {
-  const [moveType, setMoveType] = useState<'root' | 'parent'>('root');
-  const [selectedParentId, setSelectedParentId] = useState<string>('');
-  const [potentialParents, setPotentialParents] = useState<PotentialParent[]>([]);
+  const [moveType, setMoveType] = useState<"root" | "parent">("root");
+  const [selectedParentId, setSelectedParentId] = useState<string>("");
+  const [potentialParents, setPotentialParents] = useState<PotentialParent[]>(
+    [],
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingParents, setIsLoadingParents] = useState(false);
 
@@ -46,17 +63,17 @@ export default function MoveWorkItemDialog({
     if (isOpen && workItem) {
       if (propsParents.length > 0) {
         // 如果传入了预先计算的父级列表，直接使用并过滤
-        const filteredParents = propsParents.filter(parent =>
-          parent.id !== workItem.dbId // 排除自己
+        const filteredParents = propsParents.filter(
+          (parent) => parent.id !== workItem.dbId, // 排除自己
         );
         setPotentialParents(filteredParents);
         setIsLoadingParents(false);
-      } else if (projectId && userId) {
+      } else if (projectId) {
         // 如果没有传入父级列表，则进行请求
         loadPotentialParents();
       }
     }
-  }, [isOpen, workItem, projectId, userId, propsParents]);
+  }, [isOpen, workItem, projectId, propsParents]);
 
   const loadPotentialParents = async () => {
     if (!workItem?.dbId) return;
@@ -65,13 +82,12 @@ export default function MoveWorkItemDialog({
     try {
       const parents = await workBreakdownService.getPotentialParents(
         projectId,
-        userId,
-        workItem.dbId
+        workItem.dbId,
       );
       setPotentialParents(parents);
     } catch (error) {
-      console.error('加载可选父级失败:', error);
-      toast.error('加载可选父级失败');
+      console.error("加载可选父级失败:", error);
+      toast.add({ title: "加载可选父级失败", type: 'error' });
     } finally {
       setIsLoadingParents(false);
     }
@@ -79,26 +95,26 @@ export default function MoveWorkItemDialog({
 
   const handleMove = async () => {
     if (!workItem?.dbId) {
-      toast.error('工作项信息不完整');
+      toast.add({ title: "工作项信息不完整", type: 'error' });
       return;
     }
 
-    if (moveType === 'parent' && !selectedParentId) {
-      toast.error('请选择目标父级工作项');
+    if (moveType === "parent" && !selectedParentId) {
+      toast.add({ title: "请选择目标父级工作项", type: 'error' });
       return;
     }
 
     setIsLoading(true);
     try {
-      const newParentId = moveType === 'root' ? null : selectedParentId;
+      const newParentId = moveType === "root" ? null : selectedParentId;
       await workBreakdownService.moveWorkItem(workItem.dbId, newParentId);
-      
-      toast.success('工作项移动成功');
+
+      toast.add({ title: "工作项移动成功", type: 'success' });
       onMoveComplete();
       onClose();
     } catch (error) {
-      console.error('移动工作项失败:', error);
-      toast.error(error instanceof Error ? error.message : '移动工作项失败');
+      console.error("移动工作项失败:", error);
+      toast.add({ title: error instanceof Error ? error.message : "移动工作项失败", type: 'error' });
     } finally {
       setIsLoading(false);
     }
@@ -106,30 +122,30 @@ export default function MoveWorkItemDialog({
 
   const handleClose = () => {
     if (!isLoading) {
-      setMoveType('root');
-      setSelectedParentId('');
+      setMoveType("root");
+      setSelectedParentId("");
       onClose();
     }
   };
 
   const getPreviewInfo = () => {
-    if (moveType === 'root') {
+    if (moveType === "root") {
       return {
-        level: '1',
-        position: '在1级工作项的末尾'
+        level: "1",
+        position: "在1级工作项的末尾",
       };
     } else if (selectedParentId) {
-      const parent = potentialParents.find(p => p.id === selectedParentId);
+      const parent = potentialParents.find((p) => p.id === selectedParentId);
       if (parent) {
         return {
           level: `${parent.level + 2}`,
-          position: `在"${parent.name}"下的末尾`
+          position: `在"${parent.name}"下的末尾`,
         };
       }
     }
     return {
-      level: '未知',
-      position: '未知'
+      level: "未知",
+      position: "未知",
     };
   };
 
@@ -140,108 +156,142 @@ export default function MoveWorkItemDialog({
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-visible">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <MoveIcon className="h-5 w-5" />
+            <MoveIcon className="size-5" />
             移动工作项
           </DialogTitle>
+          <DialogDescription>选择移动为一级，或挂到目标父级下，预览确认层级后再提交。</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="flex flex-col gap-6">
           {/* 当前工作项信息 */}
-          <div className="p-3 bg-gray-50 rounded-lg">
-            <div className="text-sm text-gray-600 mb-1">当前工作项：</div>
+          <div className="rounded-lg bg-muted p-3">
+            <div className="mb-1 text-sm text-muted-foreground">
+              当前工作项：
+            </div>
             <div className="font-medium">{workItem?.name}</div>
-            <div className="text-sm text-gray-500">当前层级：{workItem ? workItem.level + 1 : 0}级</div>
+            <div className="text-sm text-muted-foreground">
+              当前层级：{workItem ? workItem.level + 1 : 0}级
+            </div>
           </div>
 
           {/* 移动选项 */}
-          <div className="space-y-4">
-            <Label className="text-sm font-medium">选择移动目标：</Label>
-            
-            <RadioGroup value={moveType} onValueChange={(value) => setMoveType(value as 'root' | 'parent')}>
-              <div className="flex items-center space-x-2">
+          <Field>
+            <FieldLabel>选择移动目标：</FieldLabel>
+
+            <RadioGroup
+              value={moveType}
+              onValueChange={(value) => setMoveType(value as "root" | "parent")}
+            >
+              <Field orientation="horizontal">
                 <RadioGroupItem value="root" id="root" />
-                <Label htmlFor="root">移动为1级工作项</Label>
-              </div>
-              
-              <div className="flex items-center space-x-2">
+                <FieldLabel htmlFor="root">移动为1级工作项</FieldLabel>
+              </Field>
+
+              <Field orientation="horizontal">
                 <RadioGroupItem value="parent" id="parent" />
-                <Label htmlFor="parent">移动到其他工作项下</Label>
-              </div>
+                <FieldLabel htmlFor="parent">移动到其他工作项下</FieldLabel>
+              </Field>
             </RadioGroup>
 
             {/* 父级选择 */}
-            {moveType === 'parent' && (
-              <div className="ml-6 space-y-2">
+            {moveType === "parent" && (
+              <div className="flex flex-col gap-2">
                 {isLoadingParents ? (
-                  <div className="flex items-center gap-2 text-sm text-gray-500">
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Spinner className="size-4" />
                     加载可选父级...
                   </div>
                 ) : potentialParents.length > 0 ? (
-                  <Select value={selectedParentId} onValueChange={setSelectedParentId}>
+                  <Select
+                    value={selectedParentId}
+                    onValueChange={(v) => setSelectedParentId(v ?? "")}
+                    items={potentialParents.map((p) => ({
+                      label: p.name,
+                      value: p.id,
+                    }))}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="选择目标父级工作项">
-                        {selectedParentId && (() => {
-                          const selectedParent = potentialParents.find(p => p.id === selectedParentId);
-                          return selectedParent ? (
-                            <div className="flex items-center justify-between w-full">
-                              <span className="truncate flex-1 mr-2">{selectedParent.name}</span>
-                              <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded whitespace-nowrap flex-shrink-0">
-                                {selectedParent.level + 1}级
-                              </span>
-                            </div>
-                          ) : null;
-                        })()}
+                        {selectedParentId &&
+                          (() => {
+                            const selectedParent = potentialParents.find(
+                              (p) => p.id === selectedParentId,
+                            );
+                            return selectedParent ? (
+                              <div className="flex w-full items-center justify-between">
+                                <span className="mr-2 flex-1 truncate">
+                                  {selectedParent.name}
+                                </span>
+                                <Badge
+                                  variant="secondary"
+                                  className="shrink-0 whitespace-nowrap"
+                                >
+                                  {selectedParent.level + 1}级
+                                </Badge>
+                              </div>
+                            ) : null;
+                          })()}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent
-                      className="max-h-[200px] w-[var(--radix-select-trigger-width)] z-[60]"
-                      position="popper"
+                      className="max-h-50"
                       side="bottom"
                       align="start"
                       sideOffset={4}
-                      avoidCollisions={true}
-                      collisionPadding={8}
                     >
-                      {potentialParents.map((parent) => (
-                        <SelectItem key={parent.id} value={parent.id} className="p-2 cursor-pointer">
-                          <div className="flex flex-col w-full min-w-0">
-                            <div className="flex items-start gap-2 w-full">
-                              <div className="flex-1 min-w-0">
-                                <div className="font-medium text-sm leading-tight break-words">{parent.name}</div>
-                                <div className="text-xs text-gray-500 mt-1 leading-tight break-words">{parent.path}</div>
+                      <SelectGroup>
+                        {potentialParents.map((parent) => (
+                          <SelectItem
+                            key={parent.id}
+                            value={parent.id}
+                            className="p-2 cursor-pointer"
+                          >
+                            <div className="flex w-full min-w-0 flex-col">
+                              <div className="flex w-full items-start gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-sm leading-tight font-medium wrap-break-word">
+                                    {parent.name}
+                                  </div>
+                                  <div className="mt-1 text-xs leading-tight wrap-break-word text-muted-foreground">
+                                    {parent.path}
+                                  </div>
+                                </div>
+                                <Badge
+                                  variant="secondary"
+                                  className="mt-0.5 shrink-0 whitespace-nowrap"
+                                >
+                                  {parent.level + 1}级
+                                </Badge>
                               </div>
-                              <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded whitespace-nowrap flex-shrink-0 mt-0.5">
-                                {parent.level + 1}级
-                              </span>
                             </div>
-                          </div>
-                        </SelectItem>
-                      ))}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                 ) : (
-                  <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 p-2 rounded">
-                    <AlertTriangleIcon className="h-4 w-4" />
-                    没有可选的父级工作项
-                  </div>
+                  <Alert className="border-warning/30 bg-warning/10 text-warning">
+                    <AlertTriangleIcon />
+                    <AlertTitle>没有可选的父级工作项</AlertTitle>
+                  </Alert>
                 )}
               </div>
             )}
-          </div>
+            <FieldError errors={[]} />
+          </Field>
 
           {/* 预览信息 */}
-          <div className="p-3 bg-blue-50 rounded-lg">
-            <div className="text-sm font-medium text-blue-800 mb-2">移动预览：</div>
-            <div className="text-sm text-blue-700 space-y-2">
+          <div className="rounded-lg bg-accent p-3">
+            <div className="mb-2 text-sm font-medium text-primary">
+              移动预览：
+            </div>
+            <div className="flex flex-col gap-2 text-sm text-primary">
               <div className="flex items-center gap-2">
                 <span>移动后层级：</span>
-                {previewInfo.level !== '未知' ? (
-                  <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
-                    第{previewInfo.level}级
-                  </span>
+                {previewInfo.level !== "未知" ? (
+                  <Badge variant="secondary">第{previewInfo.level}级</Badge>
                 ) : (
-                  <span className="text-gray-500">未知</span>
+                  <span className="text-muted-foreground">未知</span>
                 )}
               </div>
               <div>移动后位置：{previewInfo.position}</div>
@@ -253,11 +303,11 @@ export default function MoveWorkItemDialog({
           <Button variant="outline" onClick={handleClose} disabled={isLoading}>
             取消
           </Button>
-          <Button 
-            onClick={handleMove} 
-            disabled={isLoading || (moveType === 'parent' && !selectedParentId)}
+          <Button
+            onClick={handleMove}
+            disabled={isLoading || (moveType === "parent" && !selectedParentId)}
           >
-            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isLoading && <Spinner data-icon="inline-start" />}
             确认移动
           </Button>
         </DialogFooter>

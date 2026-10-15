@@ -2,7 +2,7 @@ import { getDb, mapBooleans } from './database';
 import type { WorkBreakdownItem } from './types';
 
 export function toWorkItem(row: Record<string, unknown>): WorkBreakdownItem {
-  return mapBooleans({ ...row }, ['is_expanded', 'is_milestone']) as unknown as WorkBreakdownItem;
+  return mapBooleans({ ...row }, ['is_expanded']) as unknown as WorkBreakdownItem;
 }
 
 export function ownProject(projectId: string, userId: string): boolean {

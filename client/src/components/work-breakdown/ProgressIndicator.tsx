@@ -1,71 +1,51 @@
-import React from 'react';
-import { 
-  formatProgressText, 
-  getProgressColorClass, 
-  getProgressBarColorClass 
+import type { FC } from 'react';
+import {
+  formatProgressText,
+  getProgressColorClass
 } from '../../lib/utils/progress-calculator';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface ProgressIndicatorProps {
   progress: number;
   size?: 'sm' | 'md' | 'lg';
   showBar?: boolean;
   showText?: boolean;
-  className?: string;
 }
 
-const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
+const SIZES = {
+  sm: { badge: 'h-4 px-1.5 text-[0.625rem]', container: 'gap-1', bar: 'min-w-[40px] max-w-[80px]' },
+  md: { badge: '', container: 'gap-2', bar: 'min-w-[60px] max-w-[120px]' },
+  lg: { badge: 'h-6 px-2.5 text-sm', container: 'gap-3', bar: 'min-w-[80px] max-w-[160px]' }
+} as const;
+
+// 工作进度指示：状态徽章（悬停显示进度）+ 进度条，全部基于 components/ui。
+const ProgressIndicator: FC<ProgressIndicatorProps> = ({
   progress,
   size = 'md',
   showBar = true,
   showText = true,
-  className = ''
 }) => {
-  const progressColorClass = getProgressColorClass(progress);
-  const progressBarColorClass = getProgressBarColorClass(progress);
-  
-  // 根据大小设置样式
-  const sizeClasses = {
-    sm: {
-      badge: 'px-1.5 py-0.5 text-xs',
-      bar: 'h-1',
-      container: 'gap-1'
-    },
-    md: {
-      badge: 'px-2 py-1 text-xs',
-      bar: 'h-2',
-      container: 'gap-2'
-    },
-    lg: {
-      badge: 'px-3 py-1.5 text-sm',
-      bar: 'h-3',
-      container: 'gap-3'
-    }
-  };
-  
-  const currentSize = sizeClasses[size];
-  
+  const clamped = Math.min(100, Math.max(0, progress));
+  const text = formatProgressText(progress);
+  const current = SIZES[size];
+
   return (
-    <div className={`flex items-center ${currentSize.container} ${className}`}>
-      {/* 进度文本标签 */}
+    <div className={`flex items-center ${current.container}`}>
       {showText && (
-        <span 
-          className={`inline-flex items-center rounded-full border font-medium ${progressColorClass} ${currentSize.badge}`}
-          title={`工作进度: ${formatProgressText(progress)}`}
-        >
-          {formatProgressText(progress)}
-        </span>
+        <Tooltip>
+          <TooltipTrigger>
+            <Badge variant="outline" className={`${getProgressColorClass(clamped)} ${current.badge}`}>
+              {text}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>工作进度: {text}</TooltipContent>
+        </Tooltip>
       )}
-      
-      {/* 进度条 */}
+
       {showBar && (
-        <div className="flex-1 min-w-[60px] max-w-[120px]">
-          <div className={`w-full bg-gray-200 rounded-full ${currentSize.bar} overflow-hidden`}>
-            <div 
-              className={`${currentSize.bar} ${progressBarColorClass} transition-all duration-300 ease-out rounded-full`}
-              style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
-            />
-          </div>
-        </div>
+        <Progress value={clamped} className={`flex-1 ${current.bar}`} />
       )}
     </div>
   );

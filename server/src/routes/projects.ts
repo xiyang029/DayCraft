@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getDb, mapBooleans, newId, nowIso, toInt } from '../lib/database';
 import { requireUser } from '../lib/session';
+import { q } from '../lib/query';
 import type { Project } from '../lib/types';
 
 const router = Router();
@@ -22,11 +23,7 @@ router.get('/', async (req, res) => {
     if (!checked.ok) return res.status(checked.status).json({ error: checked.error });
     const user = checked.user;
 
-    const q = (n: string): string | undefined => {
-      const v = req.query[n];
-      return Array.isArray(v) ? String(v[0]) : (v as string | undefined);
-    };
-    const activeOnly = q('active_only') === 'true';
+    const activeOnly = q(req, 'active_only') === 'true';
 
     const db = getDb();
     const rows = (
@@ -103,20 +100,6 @@ router.post('/', async (req, res) => {
     return res.status(201).json({ project, message: '项目创建成功' });
   } catch (error) {
     console.error('创建项目失败:', error);
-    return res.status(500).json({ error: '服务器内部错误' });
-  }
-});
-
-router.get('/:id', async (req, res) => {
-  try {
-    const checked = await requireUser(req);
-    if (!checked.ok) return res.status(checked.status).json({ error: checked.error });
-    const user = checked.user;
-    const row = owned(req.params.id, user.id);
-    if (!row) return res.status(404).json({ error: '项目不存在' });
-    return res.json({ project: toProject(row) });
-  } catch (error) {
-    console.error('获取项目失败:', error);
     return res.status(500).json({ error: '服务器内部错误' });
   }
 });

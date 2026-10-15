@@ -20,11 +20,9 @@ CREATE TABLE IF NOT EXISTS user_profiles (
   id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   email TEXT NOT NULL,
   full_name TEXT,
-  avatar_url TEXT,
   role TEXT NOT NULL DEFAULT '["user"]',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  last_sign_in_at TEXT,
   last_report_edit_at TEXT
 );
 
@@ -47,7 +45,6 @@ CREATE TABLE IF NOT EXISTS daily_reports (
   date TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  is_plan INTEGER NOT NULL DEFAULT 0,
   UNIQUE (user_id, date)
 );
 CREATE INDEX IF NOT EXISTS daily_reports_user_id_idx ON daily_reports(user_id);
@@ -80,7 +77,6 @@ CREATE TABLE IF NOT EXISTS work_breakdown_items (
   planned_end_time TEXT,
   actual_start_time TEXT,
   actual_end_time TEXT,
-  is_milestone INTEGER NOT NULL DEFAULT 0,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -88,31 +84,6 @@ CREATE TABLE IF NOT EXISTS work_breakdown_items (
 CREATE INDEX IF NOT EXISTS work_breakdown_items_project_id_idx ON work_breakdown_items(project_id);
 CREATE INDEX IF NOT EXISTS work_breakdown_items_parent_id_idx ON work_breakdown_items(parent_id);
 CREATE INDEX IF NOT EXISTS work_breakdown_items_user_id_idx ON work_breakdown_items(user_id);
-
-CREATE TABLE IF NOT EXISTS work_breakdown_shares (
-  id TEXT PRIMARY KEY,
-  project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  share_token TEXT NOT NULL UNIQUE,
-  password_hash TEXT,
-  expires_at TEXT,
-  is_active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS work_breakdown_shares_project_id_idx ON work_breakdown_shares(project_id);
-CREATE INDEX IF NOT EXISTS work_breakdown_shares_user_id_idx ON work_breakdown_shares(user_id);
-CREATE INDEX IF NOT EXISTS work_breakdown_shares_share_token_idx ON work_breakdown_shares(share_token);
-
-CREATE TABLE IF NOT EXISTS work_breakdown_share_projects (
-  id TEXT PRIMARY KEY,
-  share_id TEXT NOT NULL REFERENCES work_breakdown_shares(id) ON DELETE CASCADE,
-  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  created_at TEXT NOT NULL,
-  UNIQUE(share_id, project_id)
-);
-CREATE INDEX IF NOT EXISTS work_breakdown_share_projects_share_id_idx ON work_breakdown_share_projects(share_id);
-CREATE INDEX IF NOT EXISTS work_breakdown_share_projects_project_id_idx ON work_breakdown_share_projects(project_id);
 
 CREATE TABLE IF NOT EXISTS weekly_reports (
   id TEXT PRIMARY KEY,
@@ -164,7 +135,6 @@ CREATE TABLE IF NOT EXISTS project_weekly_reports (
   week_number INTEGER NOT NULL,
   start_date TEXT NOT NULL,
   end_date TEXT NOT NULL,
-  is_plan INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE (user_id, year, week_number)
@@ -186,21 +156,6 @@ CREATE TABLE IF NOT EXISTS project_weekly_report_items (
 );
 CREATE INDEX IF NOT EXISTS project_weekly_report_items_report_id_idx ON project_weekly_report_items(report_id);
 CREATE INDEX IF NOT EXISTS project_weekly_report_items_project_id_idx ON project_weekly_report_items(project_id);
-
-CREATE TABLE IF NOT EXISTS project_todos (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  content TEXT NOT NULL,
-  priority TEXT NOT NULL DEFAULT 'medium',
-  due_date TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'not_started',
-  completed_at TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS project_todos_user_id_idx ON project_todos(user_id);
-CREATE INDEX IF NOT EXISTS project_todos_project_id_idx ON project_todos(project_id);
 
 -- 验证码（SQLite 持久化：Next 各路由可能独立打包，内存 Map 无法跨路由共享）
 CREATE TABLE IF NOT EXISTS captchas (

@@ -9,7 +9,7 @@
 
 ```
 DayCraft/
-├── client/   前端：Vite 6 + React 18 + react-router-dom 6 + Tailwind 3
+├── client/   前端：Vite 6 + React 18 + react-router-dom 6 + Tailwind 4（@tailwindcss/vite，CSS-first，无 config 文件）
 │   └── src/{main.tsx, App.tsx, pages/, components/, contexts/, lib/, providers已删}
 ├── server/   后端：Express 4 + node:sqlite（内置模块）+ bcryptjs + cookie-parser
 │   └── src/{index.ts, routes/, lib/}
@@ -93,10 +93,48 @@ $env:NODE_ENV='production'; $env:PORT='3002'; $env:SQLITE_DB_PATH='F:\DayCraft\s
   否则守卫看到旧 `user=null` 会踢回登录页（有过血案）。
 - 环境变量全部 `import.meta.env.VITE_*`；不要用 `process.env`。
 - 管理员 badge 只显示最高权限（admin 优先），不要 map 整个 role 数组。
-- 危险操作（删用户、改角色）必须用 `components/ui/dialog` 确认框；
+- 危险操作（删用户、改角色）必须用确认框（删除类用 `components/ui/alert-dialog`，普通确认用 `components/ui/dialog`，必须带 Title）；
   自己那一行按钮禁用，后端同样拦截（400）。
-- 风格：Tailwind + shadcn（`components/ui`，radix）；toast 用 `sonner`；
+- 风格：Tailwind 4 + shadcn（`components/ui`，**base** 版，不是 radix）；toast 用 `components/ui/toast`
+  的 manager（`import { toast } from "@/components/ui/toast"`，
+  `toast.add({ title, type: 'success' | 'error' | 'info' })`，`main.tsx` 挂一次 `<Toaster />`），
+  不用 `sonner`（依赖已删）；
   旧 shadcn `toast/use-toast` 已删，别引回来。
+- UI 组件强约束：页面/业务组件（`pages/`、`components/captcha-input.tsx`、`components/work-breakdown/`、
+  `App.tsx`）**只能用 `components/ui/` 内已有组件**，禁止手写原生
+  `<button>/<input>/<select>/<textarea>` + tailwind class 冒充组件（如手写搜索框、表单输入框、
+  spinner、select 下拉）。缺组件时先找 ui 内最接近的（`Input/Textarea/Checkbox/Select/Spinner/Badge/Card`
+  等）组合，确实没有再按下一条安装。
+- `components/ui/` 源码**禁止手改**（包括加 `forwardRef`、改样式、改 API）。
+  新增/更新组件唯一合法途径是 shadcn CLI（在 `client/` 下执行，如
+  `pnpm dlx shadcn@latest add button --overwrite`），改完跑 `pnpm -r typecheck`。
+  CLI 覆盖会丢本地补丁——有本地补丁需求先提出来讨论，不要静默手改。
+- 图标只用 `lucide-react`（统一 `*Icon` 命名，如 `PencilIcon`/`TrashIcon`/`FlagIcon`），
+  禁止 emoji/字符画冒充图标（如 🏁/💡/✅/⚠️，一律换 `FlagIcon`/`LightbulbIcon` 等 lucide 同义图标）。
+  非 `*Icon` 别名导入（`Eye`/`Clock`/`Calendar` 等）统一写成 `Eye as EyeIcon` 形式，调用点只出现 `*Icon`。
+- 表单强制使用 `components/ui/field.tsx`：每个字段一律
+  `<Field><FieldLabel/><Input/Textarea/Select/Checkbox/><FieldDescription?/><FieldError/></Field>`，
+  禁止手写 `<label>` + `<p className="text-red-500">` 裸组合；横排复选/单选行用
+  `<Field orientation="horizontal">`；状态徽章（已删除/活跃等）用 `Badge`，不手写
+  `<span className="text-red-500 bg-red-50">`。
+- Select（base 版血案）：**必须显式传 `items`**（`{ label, value }[]` 或 `Record<value, label>`），
+  否则 `SelectValue` 只显示 raw value（如 `admin` / `__all` / 项目 id），不显示 label。
+  动态选项从同一数据源 map 出来（哨兵 `__all`/`__none` 也要含进去）；
+  `SelectItem` 必须包在 `SelectGroup` 内；
+  `SelectContent` 只收 `side/sideOffset/align/alignOffset/alignItemWithTrigger`（`position/avoidCollisions` 等旧属性会直接报类型错）；
+  `onValueChange` 签名是 `(value: string | null, details)`，`setState` 包一层 `(v) => setX(v ?? '')`。
+- `components/ui` 的 wrapper（如 Button）上游是普通函数组件（面向 React 19 的 ref-as-prop，
+  无 `React.forwardRef`）——**不要手改加 `forwardRef`**（违反上一条 ui 禁止手改约束）。
+  Base UI 的 Trigger/Close 类组件经 `render` prop 给目标塞 ref，React 18 下目标若是普通函数组件
+  会刷屏 `Function components cannot be given refs` 且 ref 失效（Tooltip/DropdownMenu/Dialog 都有过血案）。
+  正确修法一律在**调用侧**：`render={...}` 的目标只能是原生元素（如 `button` + `buttonVariants()` 取样式）、
+  forwardRef 组件或 react-router `Link`，不要传普通函数组件（如 `render={<Button/>}` 禁止，
+  改为 `render={<button className={cn(buttonVariants(...))} .../>}`）。同理 react-hook-form 的
+  `register()` 含 ref，不能直接 spread 到无 forwardRef 的 ui `Input` 上，改用 `Controller`。
+- DropdownMenu 的 `DropdownMenuLabel` 必须放在 `DropdownMenuGroup` **里面**（Label/Item/CheckboxItem 都一样），
+  直接挂在 `DropdownMenuContent` 下会在点击展开时整个页面崩溃（`MenuGroupContext is missing`，有过血案）。
+- 已下线功能不要复活：公开分享全链路（`work_breakdown_shares`/`work_breakdown_share_projects` 表 + `/api/work-breakdown/share` + `/api/share/:token` + ShareDialog/SharePage/设置共享页）与
+  WBS 文件导入导出（Excel/XMind 方法 + `xlsx`/`jszip`/`file-saver` 依赖）已彻底删除，表由 `database.ts` 迁移行 DROP。
 
 ## 6. 环境变量
 

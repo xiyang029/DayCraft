@@ -4,10 +4,9 @@
 数据存于本地 SQLite，无需外部服务，开箱即用。
 
 - 项目管理：多项目、激活/停用、编码查重
-- 工作分解（WBS）：5 级树形结构、拖拽排序、移动、甘特图、里程碑、XMind/Excel 导入导出、公开分享链接（可设密码/有效期）
-- 日报/计划：按日填写，待办完成可一键联动写入日报
+- 工作分解（WBS）：5 级树形结构、拖拽排序、移动、工作导图
+- 日报：按日填写
 - 周报/月报/项目周报：由日报自动聚合生成，支持 AI 润色（自定义模型）
-- 待办管理：优先级、截止日期、完成确认
 - 系统管理：用户一览、活跃统计、角色管理
 
 ## 架构
@@ -21,7 +20,7 @@ DayCraft/
 └── db_backups/  备份产物（git 忽略）
 ```
 单端口部署：`server` 同时提供 `/api/*` 并托管 `client/dist` 构建产物，Cookie 同源，无 CORS 问题。
-前端 401 时自动跳登录页；`/dashboard/*` 需登录，`/share/:token` 公开访问。
+前端 401 时自动跳登录页；`/dashboard/*` 需登录（全站无公开页面）。
 
 > 本项目由 Next.js 全栈迁移而来（Vite + Express），旧 Next.js 代码已移除。
 
@@ -82,21 +81,22 @@ pnpm -r typecheck       # 双包类型检查
 # 恢复（先停服，会自动备份当前库）
 
 .\scripts\smoke-all.ps1 -Base http://localhost:3001
-# 全接口冒烟测试（152 项断言，覆盖全部路由×方法×异常分支，需 pwsh 7+）
+# 全接口冒烟测试（107 项断言，覆盖全部路由×方法×异常分支，需 pwsh 7+）
 ```
 
 ## API 一览
 
 - 认证：`GET /api/auth/captcha`、`POST /api/auth/{signup,login,logout,reset-password}`、`GET /api/auth/me`
   - 登录/注册/重置密码均需 4 位数字字母验证码（页面直显，不区分大小写，一次性，5 分钟有效）
-- 项目：`/api/projects[/:id]`（GET/POST/GET/PUT/DELETE）
-- 日报：`/api/daily-reports[/:id]`（按日期 upsert、明细全量替换）、`/api/report-items[/:id]`
-- 待办：`/api/project-todos[/:id]`
+- 项目：`/api/projects[/:id]`（GET/POST/PUT/DELETE）
+- 日报：`/api/daily-reports[/:id]`（按日期 upsert、删除）
 - 周报/月报/项目周报：`/api/weekly-reports`、`/api/monthly-reports`、`/api/project-weekly-reports[/:id]`
-- 工作分解：`/api/work-breakdown/items[/:id]`（含批量位置）、`/api/work-breakdown/share[/:id]`
-- 公开分享：`/api/share/:token`（GET/POST，可选密码）
+- 工作分解：`/api/work-breakdown/items[/:id]`（含批量位置）
 - 设置：`/api/ai-settings`（GET/PUT）
+- AI 代理（需登录，OpenAI 兼容）：`POST /api/ai`（润色，透传 `/chat/completions`）、`POST /api/ai/test`（连通性，调上游 `/models`）
+  - key 由用户在设置页自填自管，服务端只转发不落库；Anthropic 原生接口不兼容，走代理会失败
 - 管理（admin）：`GET /api/admin/overview`、`PUT /api/admin/users/:id`（改角色，禁改自己）、`DELETE /api/admin/users/:id`（删号并级联清数据，禁删自己）
+- 用户：`GET /api/users`（登录可见，仅 id/full_name/email，供参与人员等选择真实人员）
 
 ## 备份与恢复
 

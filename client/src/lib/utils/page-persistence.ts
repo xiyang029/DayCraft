@@ -10,7 +10,7 @@ import { useState, useEffect, useRef } from 'react';
  * @param key 存储键名
  * @param data 需要保存的数据
  */
-export function savePageState<T>(key: string, data: T): void {
+function savePageState<T>(key: string, data: T): void {
   if (typeof window !== 'undefined') {
     try {
       sessionStorage.setItem(`page_state_${key}`, JSON.stringify(data));
@@ -25,7 +25,7 @@ export function savePageState<T>(key: string, data: T): void {
  * @param key 存储键名
  * @returns 恢复的数据，如果没有则返回null
  */
-export function loadPageState<T>(key: string): T | null {
+function loadPageState<T>(key: string): T | null {
   if (typeof window !== 'undefined') {
     try {
       const storedData = sessionStorage.getItem(`page_state_${key}`);

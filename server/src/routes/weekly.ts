@@ -1,12 +1,7 @@
 import { Router } from 'express';
-import { getDb, mapBooleans, newId, nowIso, toInt } from '../lib/database';
+import { getDb, newId, nowIso } from '../lib/database';
 import { requireUser } from '../lib/session';
-
-function q(req: { query: unknown }, n: string): string | undefined {
-  const query = req.query as Record<string, unknown>;
-  const v = query[n];
-  return Array.isArray(v) ? String(v[0]) : (v as string | undefined);
-}
+import { q } from '../lib/query';
 
 export const weeklyRouter = Router();
 export const monthlyRouter = Router();
@@ -151,7 +146,7 @@ monthlyRouter.post('/', async (req, res) => {
 });
 
 // ---- project_weekly_reports ----
-export type ProjectWeeklyItemInput = {
+type ProjectWeeklyItemInput = {
   project_id?: string | null;
   work_item_id?: string | null;
   content: string;
@@ -160,10 +155,6 @@ export type ProjectWeeklyItemInput = {
   work_item_name?: string | null;
   work_item_path?: string | null;
 };
-
-function toReport(row: Record<string, unknown>) {
-  return mapBooleans({ ...row }, ['is_plan']);
-}
 
 function itemsOfReport(reportId: string) {
   const db = getDb();
@@ -216,11 +207,11 @@ projectWeeklyRouter.get('/', async (req, res) => {
     if (year && week) {
       const found = rows.find((r) => r.year === Number(year) && r.week_number === Number(week));
       if (!found) return res.json({ report: null });
-      return res.json({ report: { ...toReport(found), items: itemsOfReport(found.id as string) } });
+      return res.json({ report: { ...found, items: itemsOfReport(found.id as string) } });
     }
 
     const reports = rows.map((r) =>
-      withItems ? { ...toReport(r), items: itemsOfReport(r.id as string) } : toReport(r),
+      withItems ? { ...r, items: itemsOfReport(r.id as string) } : { ...r },
     );
     return res.json({ reports, total: reports.length });
   } catch (error) {
@@ -239,7 +230,6 @@ projectWeeklyRouter.post('/', async (req, res) => {
       week_number?: number;
       start_date?: string;
       end_date?: string;
-      is_plan?: boolean;
       items?: ProjectWeeklyItemInput[];
     };
     if (!body.year || !body.week_number || !body.start_date || !body.end_date) {
@@ -271,25 +261,18 @@ projectWeeklyRouter.post('/', async (req, res) => {
     db.exec('BEGIN');
     try {
       if (report) {
-        db.prepare(
-          'UPDATE project_weekly_reports SET start_date = ?, end_date = ?, is_plan = ?, updated_at = ? WHERE id = ?',
-        ).run(body.start_date, body.end_date, toInt(body.is_plan), now, report.id);
+        db.prepare('UPDATE project_weekly_reports SET start_date = ?, end_date = ?, updated_at = ? WHERE id = ?').run(
+          body.start_date,
+          body.end_date,
+          now,
+          report.id,
+        );
         db.prepare('DELETE FROM project_weekly_report_items WHERE report_id = ?').run(report.id);
       } else {
         const id = newId();
         db.prepare(
-          'INSERT INTO project_weekly_reports (id, user_id, year, week_number, start_date, end_date, is_plan, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        ).run(
-          id,
-          checked.user.id,
-          body.year,
-          body.week_number,
-          body.start_date,
-          body.end_date,
-          toInt(body.is_plan),
-          now,
-          now,
-        );
+          'INSERT INTO project_weekly_reports (id, user_id, year, week_number, start_date, end_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        ).run(id, checked.user.id, body.year, body.week_number, body.start_date, body.end_date, now, now);
         report = { id };
       }
       const stmt = db.prepare(
@@ -323,7 +306,7 @@ projectWeeklyRouter.post('/', async (req, res) => {
     >;
     return res
       .status(201)
-      .json({ report: { ...toReport(saved), items: itemsOfReport(report.id as string) }, message: '项目周报保存成功' });
+      .json({ report: { ...saved, items: itemsOfReport(report.id as string) }, message: '项目周报保存成功' });
   } catch (error) {
     console.error('保存项目周报失败:', error);
     return res.status(500).json({ error: '服务器内部错误' });

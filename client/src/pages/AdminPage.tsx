@@ -1,8 +1,15 @@
 import { useEffect, useState, useMemo } from "react";
 import { apiDelete, apiGet, apiPut } from "../lib/api";
 import { useAuth } from "../contexts/auth-context";
-import { Input } from "../components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -10,9 +17,19 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "../components/ui/dialog";
-import { toast } from "sonner";
-import { Loader2, SearchIcon, UsersIcon, UserCheckIcon, UserPlusIcon, UserCogIcon } from "lucide-react";
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "@/components/ui/toast";
+import { SearchIcon, UsersIcon, UserCheckIcon, UserPlusIcon, UserCogIcon, InboxIcon } from "lucide-react";
 
 interface UserRow {
   id: string;
@@ -34,22 +51,12 @@ interface UserProfile {
   last_report_edit_at?: string;
 }
 
-interface Project {
-  id: string;
-  user_id: string;
-}
-
-interface DailyReport {
-  id: string;
-  user_id: string;
-  created_at: string;
-}
-
-interface RecentReport {
-  id: string;
-  user_id: string;
-  updated_at: string;
-}
+const STAT_CARDS = [
+  { key: 'total', label: '用户总数', icon: UsersIcon },
+  { key: 'active', label: '活跃用户', icon: UserCheckIcon },
+  { key: 'mau', label: '月活用户', icon: UserPlusIcon },
+  { key: 'wau', label: '7日活跃', icon: UserCogIcon },
+] as const;
 
 export default function AdminPage() {
   const { user: currentUser } = useAuth();
@@ -185,12 +192,12 @@ export default function AdminPage() {
       await apiPut(`/api/admin/users/${roleTarget.id}`, {
         role: makeAdmin ? ['admin', 'user'] : ['user'],
       });
-      toast.success(makeAdmin ? `已将 ${roleTarget.email} 设为管理员` : `已将 ${roleTarget.email} 降为普通用户`);
+      toast.add({ title: makeAdmin ? `已将 ${roleTarget.email} 设为管理员` : `已将 ${roleTarget.email} 降为普通用户`, type: 'success' });
       setRoleTarget(null);
       await fetchData();
     } catch (error) {
       console.error('更新角色失败:', error);
-      toast.error(error instanceof Error ? error.message : '更新角色失败');
+      toast.add({ title: error instanceof Error ? error.message : '更新角色失败', type: 'error' });
     } finally {
       setActing(false);
     }
@@ -202,211 +209,215 @@ export default function AdminPage() {
     setActing(true);
     try {
       const data = await apiDelete<{ message?: string }>(`/api/admin/users/${deleteTarget.id}`);
-      toast.success(data.message || '用户已删除');
+      toast.add({ title: data.message || '用户已删除', type: 'success' });
       setDeleteTarget(null);
       await fetchData();
     } catch (error) {
       console.error('删除用户失败:', error);
-      toast.error(error instanceof Error ? error.message : '删除用户失败');
+      toast.add({ title: error instanceof Error ? error.message : '删除用户失败', type: 'error' });
     } finally {
       setActing(false);
     }
   };
 
   return (
-    <div className="p-4 md:p-8">
-      <h1 className="text-2xl font-bold mb-6 flex items-center gap-2">
-        <UserCogIcon className="w-6 h-6 text-blue-600" /> 系统管理
+    <div className="flex flex-col gap-6">
+      <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
+        <UserCogIcon className="size-5 text-primary" /> 系统管理
       </h1>
       {/* 统计卡片 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
-          <UsersIcon className="w-7 h-7 text-blue-500" />
-          <div>
-            <div className="text-xs text-gray-500">用户总数</div>
-            <div className="text-xl font-bold">{stats.total}</div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
-          <UserCheckIcon className="w-7 h-7 text-green-500" />
-          <div>
-            <div className="text-xs text-gray-500">活跃用户</div>
-            <div className="text-xl font-bold">{stats.active}</div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
-          <UserPlusIcon className="w-7 h-7 text-purple-500" />
-          <div>
-            <div className="text-xs text-gray-500">月活用户</div>
-            <div className="text-xl font-bold">{stats.mau}</div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg shadow p-4 flex items-center gap-3">
-          <UserCogIcon className="w-7 h-7 text-orange-500" />
-          <div>
-            <div className="text-xs text-gray-500">7日活跃</div>
-            <div className="text-xl font-bold">{stats.wau}</div>
-          </div>
-        </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {loading ? (
+          <>
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-20 w-full" />
+          </>
+        ) : (
+          STAT_CARDS.map((card) => {
+            const Icon = card.icon;
+            return (
+              <Card key={card.key}>
+                <CardContent className="flex items-center gap-3">
+                  <Icon className="size-7 text-primary" />
+                  <div>
+                    <div className="text-xs text-muted-foreground">{card.label}</div>
+                    <div className="text-xl font-semibold">{stats[card.key]}</div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })
+        )}
       </div>
       {/* 搜索框 */}
-      <div className="flex items-center mb-4 gap-2">
-        <div className="relative w-full max-w-xs">
-          <Input
-            placeholder="搜索用户名称..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="pl-10"
-          />
-          <SearchIcon className="absolute left-2.5 top-2.5 w-4 h-4 text-gray-400" />
-        </div>
-      </div>
+      <InputGroup className="max-w-xs">
+        <InputGroupAddon>
+          <SearchIcon />
+        </InputGroupAddon>
+        <InputGroupInput
+          placeholder="搜索用户名称..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+      </InputGroup>
       {/* 用户列表 */}
-      <div className="overflow-x-auto bg-white rounded-lg shadow">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-2 text-left font-semibold text-gray-600 w-32">名称</th>
-              <th className="px-4 py-2 text-left font-semibold text-gray-600 w-56">邮箱</th>
-              <th className="px-4 py-2 text-center font-semibold text-gray-600 w-20">项目数</th>
-              <th className="px-4 py-2 text-center font-semibold text-gray-600 w-20">日报数</th>
-              <th className="px-4 py-2 text-center font-semibold text-gray-600 w-36">最近日报编辑</th> {/* 修改列标题 */}
-              <th className="px-4 py-2 text-center font-semibold text-gray-600 w-20">状态</th>
-              <th className="px-4 py-2 text-center font-semibold text-gray-600 w-24">角色</th>
-              <th className="px-4 py-2 text-center font-semibold text-gray-600 w-44">操作</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
+      <Card>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-32">名称</TableHead>
+              <TableHead className="w-56">邮箱</TableHead>
+              <TableHead className="w-20 text-center">项目数</TableHead>
+              <TableHead className="w-20 text-center">日报数</TableHead>
+              <TableHead className="w-36 text-center">最近日报编辑</TableHead>
+              <TableHead className="w-20 text-center">状态</TableHead>
+              <TableHead className="w-24 text-center">角色</TableHead>
+              <TableHead className="w-44 text-center">操作</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {loading ? (
-              <tr>
-                <td colSpan={8} className="text-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-500" />
-                  <div className="text-xs text-gray-400 mt-2">加载中...</div>
-                </td>
-              </tr>
+              <>
+                {[0, 1, 2].map((i) => (
+                  <TableRow key={`skeleton-${i}`}>
+                    <TableCell colSpan={8}>
+                      <Skeleton className="h-6 w-full" />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </>
             ) : filteredUsers.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="text-center py-8 text-gray-400">暂无数据</td>
-              </tr>
+              <TableRow>
+                <TableCell colSpan={8}>
+                  <Empty>
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <InboxIcon />
+                      </EmptyMedia>
+                      <EmptyTitle>暂无数据</EmptyTitle>
+                      <EmptyDescription>没有符合条件的用户</EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                </TableCell>
+              </TableRow>
             ) : (
-              filteredUsers.map((u, idx) => (
-                <tr key={u.id} className={idx % 2 === 0 ? "bg-white hover:bg-blue-50" : "bg-gray-50 hover:bg-blue-50"}>
-                  <td className="px-4 py-2 whitespace-nowrap font-medium text-gray-900">{u.full_name}</td>
-                  <td className="px-4 py-2 whitespace-nowrap">
+              filteredUsers.map((u) => (
+                <TableRow key={u.id}>
+                  <TableCell className="font-medium whitespace-nowrap">{u.full_name}</TableCell>
+                  <TableCell className="whitespace-nowrap">
                     {u.email}
-                  </td>
-                  <td className="px-4 py-2 text-center">{u.project_count}</td>
-                  <td className="px-4 py-2 text-center font-bold text-blue-700">{u.daily_count}</td>
-                  <td className="px-4 py-2 text-center">{u.last_report_edit || '-'}</td> {/* 显示最近日报编辑时间 */}
-                  <td className="px-4 py-2 text-center">
+                  </TableCell>
+                  <TableCell className="text-center">{u.project_count}</TableCell>
+                  <TableCell className="text-center font-semibold text-primary">{u.daily_count}</TableCell>
+                  <TableCell className="text-center">{u.last_report_edit || '-'}</TableCell>
+                  <TableCell className="text-center">
                     {u.is_active ? (
-                      <span className="inline-block px-2 py-0.5 rounded bg-green-100 text-green-700 text-xs">活跃</span>
+                      <Badge>活跃</Badge>
                     ) : (
-                      <span className="inline-block px-2 py-0.5 rounded bg-gray-200 text-gray-500 text-xs">未活跃</span>
+                      <Badge variant="secondary">未活跃</Badge>
                     )}
-                  </td>
-                  <td className="px-4 py-2 text-center">
+                  </TableCell>
+                  <TableCell className="text-center">
                     {isAdminUser(u) ? (
-                      <span className="inline-block px-2 py-0.5 rounded bg-blue-100 text-blue-700 text-xs font-semibold">管理员</span>
+                      <Badge>管理员</Badge>
                     ) : (
-                      <span className="inline-block px-2 py-0.5 rounded bg-gray-100 text-gray-600 text-xs">普通用户</span>
+                      <Badge variant="outline">普通用户</Badge>
                     )}
-                  </td>
-                  <td className="px-4 py-2 text-center whitespace-nowrap">
-                    <button
-                      disabled={isSelf(u.id)}
-                      title={isSelf(u.id) ? '不能修改自己的角色' : '编辑用户角色'}
-                      onClick={() => openRoleEditor(u)}
-                      className="px-2 py-1 text-xs rounded border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed mr-2"
-                    >
-                      编辑
-                    </button>
-                    <button
-                      disabled={isSelf(u.id)}
-                      title={isSelf(u.id) ? '不能删除自己' : '删除该用户及其全部数据'}
-                      onClick={() => setDeleteTarget({ id: u.id, email: u.email })}
-                      className="px-2 py-1 text-xs rounded border border-red-300 text-red-700 bg-red-50 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      删除
-                    </button>
-                  </td>
-                </tr>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <div className="flex items-center justify-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isSelf(u.id)}
+                        title={isSelf(u.id) ? '不能修改自己的角色' : '编辑用户角色'}
+                        onClick={() => openRoleEditor(u)}
+                      >
+                        编辑
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={isSelf(u.id)}
+                        title={isSelf(u.id) ? '不能删除自己' : '删除该用户及其全部数据'}
+                        onClick={() => setDeleteTarget({ id: u.id, email: u.email })}
+                      >
+                        删除
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
               ))
             )}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </Card>
 
       {/* 角色编辑框：下拉选择目标角色，与当前一致时禁用确认 */}
       <Dialog open={!!roleTarget} onOpenChange={(open) => { if (!open) setRoleTarget(null); }}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>编辑用户角色</DialogTitle>
             <DialogDescription>
               为 {roleTarget?.email} 选择角色，保存后实时生效。
             </DialogDescription>
           </DialogHeader>
-          <div className="py-2">
-            <Select value={roleEditValue} onValueChange={(v) => setRoleEditValue(v as 'user' | 'admin')}>
-              <SelectTrigger className="w-full">
+          <Field>
+            <FieldLabel htmlFor="role-select">角色</FieldLabel>
+            <Select value={roleEditValue} onValueChange={(v) => setRoleEditValue(v as 'user' | 'admin')} items={[{ label: '普通用户', value: 'user' }, { label: '管理员', value: 'admin' }]}>
+              <SelectTrigger id="role-select" className="w-full">
                 <SelectValue placeholder="选择角色" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="user">普通用户</SelectItem>
-                <SelectItem value="admin">管理员</SelectItem>
+                <SelectGroup>
+                  <SelectItem value="user">普通用户</SelectItem>
+                  <SelectItem value="admin">管理员</SelectItem>
+                </SelectGroup>
               </SelectContent>
             </Select>
             {roleUnchanged && (
-              <p className="mt-2 text-xs text-gray-500">与当前角色一致，无需保存。</p>
+              <FieldDescription>与当前角色一致，无需保存。</FieldDescription>
             )}
-          </div>
+            <FieldError errors={[]} />
+          </Field>
           <DialogFooter>
-            <button
+            <Button
+              variant="outline"
               onClick={() => setRoleTarget(null)}
               disabled={acting}
-              className="px-4 py-2 text-sm rounded border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
             >
               取消
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={confirmRoleChange}
               disabled={acting || roleUnchanged}
               title={roleUnchanged ? '角色未变化' : '保存角色'}
-              className="px-4 py-2 text-sm rounded text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {acting ? '保存中...' : '确认'}
-            </button>
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* 删除用户确认框（危险操作） */}
-      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-red-700">确认删除用户？</DialogTitle>
-            <DialogDescription>
-              将永久删除 {deleteTarget?.email} 的账号及其<b>全部数据</b>（项目、日报、待办、工作分解、分享、AI 设置等），不可恢复，请慎重确认。
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <button
-              onClick={() => setDeleteTarget(null)}
-              disabled={acting}
-              className="px-4 py-2 text-sm rounded border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-            >
-              取消
-            </button>
-            <button
-              onClick={confirmDeleteUser}
-              disabled={acting}
-              className="px-4 py-2 text-sm rounded text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
-            >
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除用户？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将永久删除 {deleteTarget?.email} 的账号及其全部数据（项目、日报、待办、工作分解、分享、AI 设置等），不可恢复，请慎重确认。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={acting}>取消</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={confirmDeleteUser} disabled={acting}>
               {acting ? '删除中...' : '确认删除'}
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

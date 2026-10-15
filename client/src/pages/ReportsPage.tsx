@@ -1,19 +1,31 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { CalendarIcon, DownloadIcon, FileTextIcon, RefreshCwIcon, CheckCircleIcon, XCircleIcon, AlertCircleIcon, EyeIcon, CopyIcon, XIcon, PencilIcon, SparklesIcon, ChevronLeftIcon, ChevronRightIcon, Loader2Icon, PlusIcon, SaveIcon } from "lucide-react";
-import { Link } from 'react-router-dom';
+import { DownloadIcon, FileTextIcon, RefreshCwIcon, CheckCircleIcon, XCircleIcon, AlertCircleIcon, EyeIcon, CopyIcon, XIcon, PencilIcon, SparklesIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { useAuth } from "../contexts/auth-context";
 import { apiGet, apiPost } from "../lib/api";
 import type { UserAISettings } from "../lib/db/types";
-import { format, startOfWeek, endOfWeek, eachDayOfInterval, getWeek, getMonth, getYear, parseISO, isSameDay, startOfMonth, endOfMonth, addDays, subDays, addWeeks, subWeeks, addMonths, subMonths, isWithinInterval } from "date-fns";
+import { format, startOfWeek, endOfWeek, eachDayOfInterval, getWeek, getMonth, getYear, parseISO, startOfMonth, endOfMonth } from "date-fns";
 import { zhCN } from "date-fns/locale";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { usePersistentState } from "../lib/utils/page-persistence";
+import { getWorkStatusStyle } from "../lib/utils/status-colors";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "cn";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { Card, CardHeader, CardTitle, CardAction, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Empty, EmptyHeader, EmptyTitle, EmptyMedia } from "@/components/ui/empty";
+
 
 interface DailyReportData {
   date: string;
   content?: string;
-  is_plan?: boolean;
 }
 
 type ReportType = "weekly" | "monthly";
@@ -22,7 +34,6 @@ type ReportStatus = "generated" | "pending" | "generating" | "not_available";
 interface DailyReportStatus {
   date: string; // ISO格式日期
   hasReport: boolean;
-  is_plan?: boolean; // 是否为计划日报
 }
 
 interface WeekData {
@@ -54,13 +65,25 @@ interface ReportPreviewProps {
   content: string;
   onClose: () => void;
   onSave?: (content: string) => Promise<void>;
-  readOnly?: boolean;
 }
 
+// 日报状态色块的布局参数（周报、月报各有差异）
+interface DailyStatusBlockOptions {
+  containerClassName: string;
+  blockClassName: string;
+  keyWithDate?: boolean;
+}
+
+// 周报：每天一个色块，横向排列
+const WEEKLY_STATUS_BLOCKS: DailyStatusBlockOptions = {
+  containerClassName: "flex gap-1",
+  blockClassName: "size-3",
+};
+
 // 报告预览组件
-const ReportPreview: React.FC<ReportPreviewProps> = ({ title, content, onClose, onSave, readOnly = false }) => {
+const ReportPreview: React.FC<ReportPreviewProps> = ({ title, content, onClose, onSave }) => {
   const { user } = useAuth();
-  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaWrapRef = useRef<HTMLDivElement>(null);
   const [editedContent, setEditedContent] = useState(content);
   const [isSaving, setIsSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -91,10 +114,12 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({ title, content, onClose, 
   }, [aiSettings]);
   
   const handleCopy = () => {
-    if (textAreaRef.current) {
-      textAreaRef.current.select();
+    // ui Textarea 无 forwardRef，ref 挂在包裹容器上，通过容器取到原生 textarea
+    const textarea = textareaWrapRef.current?.querySelector('textarea');
+    if (textarea) {
+      textarea.select();
       document.execCommand('copy');
-      toast.success('内容已复制到剪贴板');
+      toast.add({ title: '内容已复制到剪贴板', type: 'success' });
     }
   };
   
@@ -106,7 +131,7 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({ title, content, onClose, 
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
-    toast.success('报告已下载');
+    toast.add({ title: '报告已下载', type: 'success' });
   };
 
   const handleEdit = () => {
@@ -119,11 +144,11 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({ title, content, onClose, 
     setIsSaving(true);
     try {
       await onSave(editedContent);
-      toast.success('报告已保存');
+      toast.add({ title: '报告已保存', type: 'success' });
       setIsEditing(false);
     } catch (error) {
       console.error('保存报告失败:', error);
-      toast.error('保存失败，请重试');
+      toast.add({ title: '保存失败，请重试', type: 'error' });
     } finally {
       setIsSaving(false);
     }
@@ -137,13 +162,13 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({ title, content, onClose, 
   // AI润色功能
   const handlePolish = async () => {
     if (!aiSettings) {
-      toast.error('未找到AI设置，请先在设置页面配置AI');
+      toast.add({ title: '未找到AI设置，请先在设置页面配置AI', type: 'error' });
       return;
     }
     
     // 使用用户自定义AI配置
     if (!aiSettings.api_key) {
-      toast.error('未设置API密钥，请先在设置页面配置');
+      toast.add({ title: '未设置API密钥，请先在设置页面配置', type: 'error' });
       return;
     }
     const apiConfig = {
@@ -155,7 +180,7 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({ title, content, onClose, 
     };
     
     setIsPolishing(true);
-    toast.info('正在使用自定义AI润色报告...');
+    toast.add({ title: '正在使用自定义AI润色报告...', type: 'info' });
     
     try {
       // 准备提示词
@@ -172,168 +197,157 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({ title, content, onClose, 
       userPrompt = `请对以下${reportType}进行润色和优化，使其更加专业、条理清晰，并保持原有的工作内容不变。\n\n${editedContent}`;
       
       // 调用AI API（通过代理路由绕过CORS）
-      const response = await fetch('/api/ai', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          api_url: apiConfig.api_url || 'https://api.openai.com/v1',
-          api_key: apiConfig.api_key,
-          model: apiConfig.model_name || 'gpt-3.5-turbo',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          temperature: 0.7
-        })
+      const result = await apiPost<{ choices?: Array<{ message?: { content?: string } }> }>('/api/ai', {
+        api_url: apiConfig.api_url || 'https://api.openai.com/v1',
+        api_key: apiConfig.api_key,
+        model: apiConfig.model_name || 'gpt-3.5-turbo',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.7
       });
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error?.message || '调用AI API失败');
-      }
-      
-      const result = await response.json();
+
       const polishedContent = result.choices?.[0]?.message?.content;
       
       if (polishedContent) {
         setEditedContent(polishedContent);
-        toast.success('AI润色完成');
+        toast.add({ title: 'AI润色完成', type: 'success' });
         // 自动进入编辑模式以便用户可以进一步修改
         setIsEditing(true);
       } else {
         throw new Error('未收到有效的AI响应');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('AI润色失败:', error);
-      toast.error(`润色失败: ${error.message || '未知错误'}`);
+      toast.add({ title: `润色失败: ${error instanceof Error ? error.message : '未知错误'}`, type: 'error' });
     } finally {
       setIsPolishing(false);
     }
   };
   
   return (
-    <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50 p-2 md:p-0">
-      <div className="bg-white rounded-lg p-3 md:p-6 max-w-4xl w-full mx-2 md:mx-4 max-h-[90vh] flex flex-col">
-        <div className="flex justify-between items-center mb-2 md:mb-4">
-          <h3 className="text-sm md:text-lg font-medium text-gray-900 truncate pr-2">{title}</h3>
-          <button 
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-500"
-          >
-            <XIcon className="h-4 w-4 md:h-5 md:w-5" />
-          </button>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="truncate pr-2">{title}</DialogTitle>
+          <DialogDescription>预览、编辑、润色并保存报告内容</DialogDescription>
+        </DialogHeader>
+        
+        <div ref={textareaWrapRef} className="min-h-0 grow overflow-auto p-1">
+          <Field>
+            <FieldLabel htmlFor="report-content" className="sr-only">报告内容</FieldLabel>
+            <Textarea
+              id="report-content"
+              className={cn(
+                "h-full min-h-50 p-2 font-mono text-xs md:min-h-100 md:p-4 md:text-sm",
+                isEditing ? "bg-card" : "bg-muted/50"
+              )}
+              value={editedContent}
+              onChange={(e) => setEditedContent(e.target.value)}
+              readOnly={!isEditing}
+            />
+            <FieldError errors={[]} />
+          </Field>
         </div>
         
-        <div className="flex-grow overflow-auto">
-          <textarea
-            ref={textAreaRef}
-            className={`w-full h-full min-h-[200px] md:min-h-[400px] p-2 md:p-4 border border-gray-300 rounded-md font-mono text-xs md:text-sm ${isEditing ? 'bg-white' : 'bg-gray-50'}`}
-            value={editedContent}
-            onChange={(e) => setEditedContent(e.target.value)}
-            readOnly={readOnly || !isEditing}
-          />
-        </div>
-        
-        <div className="flex flex-wrap justify-end gap-2 md:space-x-3 mt-3 md:mt-4">
-          <button
+        <DialogFooter className="flex-wrap justify-end">
+          <Button variant="outline" size="sm"
             onClick={handleCopy}
-            className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-gray-300 text-xs md:text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
           >
-            <CopyIcon className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-1" />
+            <CopyIcon data-icon="inline-start" />
             复制
-          </button>
-          <button
+          </Button>
+          <Button variant="outline" size="sm"
             onClick={handleDownload}
-            className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-gray-300 text-xs md:text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
           >
-            <DownloadIcon className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-1" />
+            <DownloadIcon data-icon="inline-start" />
             下载
-          </button>
+          </Button>
           
-          {!readOnly && (
-            <>
-              {isAIEnabled && (
-              <button
-                onClick={handlePolish}
-                disabled={isPolishing || isEditing}
-                className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-purple-300 text-xs md:text-sm font-medium rounded-md text-purple-700 bg-purple-50 hover:bg-purple-100 disabled:opacity-50"
-                title="使用AI润色报告"
-              >
-                  <SparklesIcon className={`h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-1 ${isPolishing ? 'animate-pulse' : ''}`} />
-                  {isPolishing ? '润色中...' : 'AI润色'}
-              </button>
-              )}
-              
-              {isEditing ? (
-                <>
-                  <button
-                    onClick={handleCancel}
-                    className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-gray-300 text-xs md:text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                  >
-                    <XIcon className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-1" />
-                    取消
-                  </button>
-                  <button
-                    onClick={handleSave}
-                    disabled={isSaving}
-                    className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-transparent text-xs md:text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {isSaving && <RefreshCwIcon className="animate-spin h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-1" />}
-                    {!isSaving && <CheckCircleIcon className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-1" />}
-                    保存
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={handleEdit}
-                  className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-blue-300 text-xs md:text-sm font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100"
-                >
-                  <PencilIcon className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-1" />
-                  编辑
-                </button>
-              )}
-            </>
+          {isAIEnabled && (
+            <Button variant="outline" size="sm"
+              onClick={handlePolish}
+              disabled={isPolishing || isEditing}
+              className="text-chart-4"
+              title="使用AI润色报告"
+            >
+              <SparklesIcon data-icon="inline-start" className={isPolishing ? "animate-pulse" : undefined} />
+              {isPolishing ? '润色中...' : 'AI润色'}
+            </Button>
           )}
+
+          {isEditing ? (
+              <>
+                <Button variant="outline" size="sm"
+                  onClick={handleCancel}
+                >
+                  <XIcon data-icon="inline-start" />
+                  取消
+                </Button>
+                <Button size="sm"
+                  onClick={handleSave}
+                  disabled={isSaving}
+                >
+                  {isSaving && <Spinner data-icon="inline-start" />}
+                  {!isSaving && <CheckCircleIcon data-icon="inline-start" />}
+                  保存
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" size="sm"
+                onClick={handleEdit}
+                className="text-primary"
+              >
+                <PencilIcon data-icon="inline-start" />
+                编辑
+              </Button>
+            )}
           
-          <button
+          <Button size="sm"
             onClick={onClose}
-            className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-transparent text-xs md:text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
           >
             关闭
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };
 
-// 面包屑组件
+// 周期切换组件（周报按月切换、月报按年切换共用）
 interface BreadcrumbsProps {
-  year: number;
-  month: number;
-  onYearMonthChange: (year: number, month: number) => void;
+  label: string;
+  prevLabel: string;
+  nextLabel: string;
+  onPrev: () => void;
+  onNext: () => void;
 }
 
-const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ year, month, onYearMonthChange }) => {
+const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ label, prevLabel, nextLabel, onPrev, onNext }) => {
   return (
-    <div className="flex items-center text-xs md:text-sm text-gray-500 mb-2 md:mb-4">
-      <button 
-        onClick={() => onYearMonthChange(year, month - 1 > 0 ? month - 1 : 12)}
-        className="mr-1 md:mr-2 p-1 rounded-full hover:bg-gray-100"
-        aria-label="上个月"
+    <div className="flex items-center gap-1 text-xs text-muted-foreground md:text-sm">
+      <Tooltip>
+<TooltipTrigger render={<button type="button"
+        onClick={onPrev}
+        className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }))}
+        aria-label={prevLabel}
       >
-        <ChevronLeftIcon className="h-3 w-3 md:h-4 md:w-4" />
-      </button>
-      <span className="font-medium text-gray-700 whitespace-nowrap">{year}年{month}月</span>
-      <button 
-        onClick={() => onYearMonthChange(year, month + 1 <= 12 ? month + 1 : 1)}
-        className="ml-1 md:ml-2 p-1 rounded-full hover:bg-gray-100"
-        aria-label="下个月"
+        <ChevronLeftIcon />
+      </button>} />
+<TooltipContent>{prevLabel}</TooltipContent>
+</Tooltip>
+      <span className="font-medium whitespace-nowrap text-foreground">{label}</span>
+      <Tooltip>
+<TooltipTrigger render={<button type="button"
+        onClick={onNext}
+        className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }))}
+        aria-label={nextLabel}
       >
-        <ChevronRightIcon className="h-3 w-3 md:h-4 md:w-4" />
-      </button>
+        <ChevronRightIcon />
+      </button>} />
+<TooltipContent>{nextLabel}</TooltipContent>
+</Tooltip>
     </div>
   );
 };
@@ -469,13 +483,11 @@ export default function ReportsPage() {
       // 生成周期内每天的日报状态
       eachDayOfInterval({ start: weekStartDate, end: weekEndDate }).forEach(date => {
         const dateStr = format(date, 'yyyy-MM-dd');
-        const report = reports.find(r => r.date === dateStr && !r.is_plan);
-        const planReport = reports.find(r => r.date === dateStr && r.is_plan);
-        
+        const report = reports.find(r => r.date === dateStr);
+
         dailyStatus.push({
-                date: dateStr,
-          hasReport: !!report || !!planReport,
-          is_plan: !report && !!planReport
+          date: dateStr,
+          hasReport: !!report
         });
       });
       
@@ -522,12 +534,11 @@ export default function ReportsPage() {
         });
         
         const hasReport = !!reportForDate;
-        const isPlan = reportForDate?.is_plan || false;
-        
-        dailyStatus.push({ date: dateStr, hasReport, is_plan: isPlan });
-        
-        // 只有不是计划的日报才参与月报生成
-        if (hasReport && reportForDate?.content && !isPlan) {
+
+        dailyStatus.push({ date: dateStr, hasReport });
+
+        // 日报参与月报生成
+        if (hasReport && reportForDate?.content) {
           // 解析内容，按项目分组
           const contentLines = reportForDate.content.split('\n');
           contentLines.forEach(line => {
@@ -692,7 +703,6 @@ export default function ReportsPage() {
       const processedData = (data.reports || []).map((report: any) => {
         return {
           date: report.date as string,
-          is_plan: report.is_plan || false,
           content: (report.report_items || []).map((item: any) => {
             const project = Array.isArray(item.projects) ? item.projects[0] : item.projects;
             return `[${project?.name} (${project?.code})] ${item.content}`;
@@ -717,7 +727,7 @@ export default function ReportsPage() {
       lastLoadTimeRef.current = now;
     } catch (error) {
       console.error('获取日报数据失败', error);
-      toast.error('获取日报数据失败');
+      toast.add({ title: '获取日报数据失败', type: 'error' });
     } finally {
       setIsLoading(false);
     }
@@ -773,11 +783,11 @@ export default function ReportsPage() {
         const weekData = weeklyData.find(w => w.formattedPeriod === period);
         if (!weekData) throw new Error('未找到周报数据');
         
-        // 收集该周的日报内容，过滤掉已计划的日报
+        // 收集该周的日报内容
         const dailyContents = dailyReports
           .filter(report => {
             const reportDate = parseISO(report.date);
-            return reportDate >= weekData.startDate && reportDate <= weekData.endDate && !report.is_plan;
+            return reportDate >= weekData.startDate && reportDate <= weekData.endDate;
           })
           .map(report => {
             return {
@@ -857,11 +867,11 @@ export default function ReportsPage() {
         const monthData = monthlyData.find(m => m.formattedPeriod === period);
         if (!monthData) throw new Error('未找到月报数据');
         
-        // 收集该月的日报内容，过滤掉已计划日报
+        // 收集该月的日报内容
         const dailyContents = dailyReports
           .filter(report => {
             const reportDate = parseISO(report.date);
-            return reportDate >= monthData.startDate && reportDate <= monthData.endDate && !report.is_plan;
+            return reportDate >= monthData.startDate && reportDate <= monthData.endDate;
           })
           .map(report => {
             return {
@@ -939,13 +949,13 @@ export default function ReportsPage() {
       }
       
       // 显示成功消息
-      toast.success(`${type === 'weekly' ? '周报' : '月报'}生成成功`);
+      toast.add({ title: `${type === 'weekly' ? '周报' : '月报'}生成成功`, type: 'success' });
       
       // 移除自动打开预览
       // handlePreviewReport(type, period);
     } catch (error: any) {
       console.error('生成报告失败', error);
-      toast.error(`生成失败: ${error.message || '未知错误'}`);
+      toast.add({ title: `生成失败: ${error.message || '未知错误'}`, type: 'error' });
     } finally {
       setGeneratingReportId(null);
     }
@@ -1043,40 +1053,25 @@ export default function ReportsPage() {
     setPreviewData(null);
   };
 
-  // 渲染日报状态指示器
-  const renderDailyStatusIndicators = (dailyStatus: DailyReportStatus[]) => {
+  // 渲染日报状态色块（周报、月报共用）
+  const renderDailyStatusIndicators = (dailyStatus: DailyReportStatus[], options: DailyStatusBlockOptions) => {
     return (
-      <div className="flex space-x-1">
+      <div className={options.containerClassName}>
         {dailyStatus.map((day, index) => {
           const date = parseISO(day.date);
           const dayOfWeek = date.getDay();
           const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-          
-          // 已计划的日报使用蓝色
-          let bgColor = day.is_plan 
-            ? 'bg-blue-500'
-            : day.hasReport 
-              ? 'bg-green-500' 
-              : 'bg-gray-200';
-          
-          if (isWeekend) {
-            bgColor = day.is_plan 
-              ? 'bg-blue-400'
-              : day.hasReport 
-                ? 'bg-green-400' 
-                : 'bg-gray-100';
-          }
-          
+
+          // 状态色统一由 lib/utils/status-colors 提供：已填报=已完成、未填报=未开始
+          const statusStyle = getWorkStatusStyle(day.hasReport ? '已完成' : '未开始');
+
           // 设置提示文本
-          let statusText = day.hasReport ? '已填报' : '未填报';
-          if (day.is_plan) {
-            statusText = '已计划';
-          }
-          
+          const statusText = day.hasReport ? '已填报' : '未填报';
+
           return (
-            <div 
-              key={index}
-              className={`w-3 h-3 rounded-sm ${bgColor}`}
+            <div
+              key={options.keyWithDate ? `${day.date}-${index}` : index}
+              className={cn('rounded-sm', options.blockClassName, statusStyle.solidClassName, isWeekend && 'opacity-60')}
               title={`${day.date}${isWeekend ? ' (周末)' : ''}: ${statusText}`}
             />
           );
@@ -1090,106 +1085,97 @@ export default function ReportsPage() {
     switch (status) {
       case 'generated':
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-            <CheckCircleIcon className="h-3 w-3 mr-1" />
+          <Badge variant="default">
+            <CheckCircleIcon data-icon="inline-start" />
             已生成
-          </span>
+          </Badge>
         );
       case 'generating':
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-            <RefreshCwIcon className="h-3 w-3 mr-1 animate-spin" />
+          <Badge variant="secondary">
+            <Spinner data-icon="inline-start" />
             生成中
-          </span>
+          </Badge>
         );
       case 'pending':
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-            <AlertCircleIcon className="h-3 w-3 mr-1" />
+          <Badge variant="secondary">
+            <AlertCircleIcon data-icon="inline-start" />
             可生成
-          </span>
+          </Badge>
         );
       case 'not_available':
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
-            <XCircleIcon className="h-3 w-3 mr-1" />
+          <Badge variant="outline">
+            <XCircleIcon data-icon="inline-start" />
             无法生成
-          </span>
+          </Badge>
         );
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       <div className="flex justify-between items-center">
         <h1 className="text-xl md:text-2xl font-bold">周报月报</h1>
       </div>
 
       {/* 切换标签 */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-4 md:space-x-8">
-          <button
-            onClick={() => setActiveTab("weekly")}
-            className={`py-3 md:py-4 px-1 border-b-2 font-medium text-xs md:text-sm ${
-              activeTab === "weekly"
-                ? "border-blue-500 text-blue-600"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-            }`}
-          >
-            周报
-          </button>
-          <button
-            onClick={() => setActiveTab("monthly")}
-            className={`py-3 md:py-4 px-1 border-b-2 font-medium text-xs md:text-sm ${
-              activeTab === "monthly"
-                ? "border-blue-500 text-blue-600"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-            }`}
-          >
-            月报
-          </button>
-        </nav>
-      </div>
+      <Tabs value={activeTab} onValueChange={(value) => { if (value === "weekly" || value === "monthly") setActiveTab(value); }}>
+        <TabsList variant="line">
+          <TabsTrigger value="weekly">周报</TabsTrigger>
+          <TabsTrigger value="monthly">月报</TabsTrigger>
+        </TabsList>
 
       {/* 报告列表 */}
-      <div className="bg-white shadow rounded-lg">
-        <div className="px-3 md:px-4 py-3 md:py-5 sm:px-6 border-b border-gray-200">
+      <TabsContent value={activeTab}>
+      <Card>
+        <CardHeader className="border-b border-gray-200">
           <div className="flex justify-between items-center">
-            <h2 className="text-base md:text-lg font-medium">
+            <CardTitle>
             {activeTab === "weekly" ? "周报列表" : "月报列表"}
-          </h2>
+          </CardTitle>
             {activeTab === "weekly" ? (
-              <Breadcrumbs 
-                year={currentYear}
-                month={currentMonth}
-                onYearMonthChange={handleYearMonthChange}
+              <Breadcrumbs
+                label={`${currentYear}年${currentMonth}月`}
+                prevLabel="上一月"
+                nextLabel="下一月"
+                onPrev={() => handleYearMonthChange(currentYear, currentMonth - 1)}
+                onNext={() => handleYearMonthChange(currentYear, currentMonth + 1)}
               />
             ) : (
               <div className="flex items-center text-xs md:text-sm text-gray-500 mb-2 md:mb-4">
-                <button 
+                <Tooltip>
+<TooltipTrigger render={<button type="button"
                   onClick={() => handleYearChange(currentYear - 1)}
-                  className="mr-1 md:mr-2 p-1 rounded-full hover:bg-gray-100"
+                  className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "mr-1 md:mr-2 p-1 rounded-full hover:bg-gray-100")}
                   aria-label="上一年"
                 >
-                  <ChevronLeftIcon className="h-3 w-3 md:h-4 md:w-4" />
-                </button>
+                  <ChevronLeftIcon data-icon="inline-start" />
+                </button>} />
+<TooltipContent>上一年</TooltipContent>
+</Tooltip>
                 <span className="font-medium text-gray-700">{currentYear}年</span>
-                <button 
+                <Tooltip>
+<TooltipTrigger render={<button type="button"
                   onClick={() => handleYearChange(currentYear + 1)}
-                  className="ml-1 md:ml-2 p-1 rounded-full hover:bg-gray-100"
+                  className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "ml-1 md:ml-2 p-1 rounded-full hover:bg-gray-100")}
                   aria-label="下一年"
                 >
-                  <ChevronRightIcon className="h-3 w-3 md:h-4 md:w-4" />
-                </button>
+                  <ChevronRightIcon data-icon="inline-start" />
+                </button>} />
+<TooltipContent>下一年</TooltipContent>
+</Tooltip>
               </div>
             )}
           </div>
-        </div>
+        </CardHeader>
         
+        <CardContent>
         {isLoading ? (
-          <div className="flex justify-center items-center p-6 md:p-12">
-            <div className="animate-spin rounded-full h-6 w-6 md:h-8 md:w-8 border-t-2 border-b-2 border-blue-500"></div>
-            <span className="ml-2 text-sm md:text-base text-gray-500">加载中...</span>
+          <div className="flex items-center justify-center gap-2 p-6 md:p-12">
+            <Skeleton className="h-8 w-8 rounded-full" />
+            <span className="text-sm md:text-base text-gray-500">加载中...</span>
           </div>
         ) : (
           <div>
@@ -1199,45 +1185,43 @@ export default function ReportsPage() {
                   filteredWeeklyData.map((week) => (
                     <li key={`${week.year}-${week.weekNumber}`} className="p-3 md:p-4">
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-                        <div className="flex items-start flex-grow">
-                          <div className="flex-shrink-0">
+                        <div className="flex items-start grow">
+                          <div className="shrink-0">
                             <FileTextIcon className="h-5 w-5 md:h-6 md:w-6 text-blue-500" />
                           </div>
-                          <div className="ml-3 md:ml-4 flex-grow">
+                          <div className="ml-3 md:ml-4 grow">
                             <div className="flex flex-wrap items-center gap-1 md:gap-2 justify-between w-full">
                               <div className="flex items-center gap-1 md:gap-2">
                                 <h3 className="text-sm md:text-base font-medium">{week.year}年第{week.weekNumber}周</h3>
                               {renderReportStatus(week.reportStatus)}
                             </div>
-                              <div className="flex items-center space-x-1 md:space-x-2">
+                              <div className="flex items-center gap-1 md:gap-2">
                           {week.reportStatus === "generated" && (
-                            <button
+                            <Button variant="outline" size="sm"
                               onClick={() => handlePreviewReport("weekly", week.formattedPeriod)}
-                                    className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-gray-300 text-xs md:text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                             >
-                                    <EyeIcon className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-1" />
+                                    <EyeIcon data-icon="inline-start" />
                               预览
-                            </button>
+                            </Button>
                           )}
                           {(week.reportStatus === "pending" || week.reportStatus === "generated") && (
-                            <button
+                            <Button variant="outline" size="sm"
                               onClick={() => handleGenerateReport("weekly", week.formattedPeriod)}
                               disabled={generatingReportId === `weekly-${week.formattedPeriod}`}
-                                    className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-blue-300 text-xs md:text-sm font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50"
+                              className="border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50"
                             >
-                                    <RefreshCwIcon className={`h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-1 ${generatingReportId === `weekly-${week.formattedPeriod}` ? 'animate-spin' : ''}`} />
+                                    {generatingReportId === `weekly-${week.formattedPeriod}` ? <Spinner data-icon="inline-start" /> : <RefreshCwIcon data-icon="inline-start" />}
                                     <span className="hidden md:inline">{generatingReportId === `weekly-${week.formattedPeriod}` ? '生成中...' : '生成周报'}</span>
                                     <span className="inline md:hidden">{generatingReportId === `weekly-${week.formattedPeriod}` ? '生成中' : '生成'}</span>
-                            </button>
+                            </Button>
                           )}
                               </div>
                             </div>
-                            <div className="mt-0.5 md:mt-1 flex items-center text-xs md:text-sm text-gray-500">
-                              <CalendarIcon className="h-3 w-3 md:h-4 md:w-4 mr-1" />
+                            <div className="mt-0.5 md:mt-1 text-xs md:text-sm text-gray-500">
                               <span>{week.formattedPeriod}</span>
                             </div>
                             <div className="mt-1 md:mt-2">
-                              {renderDailyStatusIndicators(week.dailyReportStatus)}
+                              {renderDailyStatusIndicators(week.dailyReportStatus, WEEKLY_STATUS_BLOCKS)}
                             </div>
                             {week.generatedAt && (
                               <p className="mt-0.5 md:mt-1 text-xs text-gray-500">
@@ -1250,8 +1234,12 @@ export default function ReportsPage() {
                     </li>
                   ))
                 ) : (
-                  <li className="p-3 md:p-4 text-center text-xs md:text-sm text-gray-500">
-                    {currentYear}年第{currentMonth}月暂无周报记录
+                  <li className="p-3 md:p-4">
+                    <Empty>
+                      <EmptyHeader>
+                        <EmptyTitle>{currentYear}年第{currentMonth}月暂无周报记录</EmptyTitle>
+                      </EmptyHeader>
+                    </Empty>
                   </li>
                 )}
               </ul>
@@ -1261,41 +1249,39 @@ export default function ReportsPage() {
                   filteredMonthlyData.map((month) => (
                     <li key={`${month.year}-${month.month}`} className="p-3 md:p-4">
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-                        <div className="flex items-start flex-grow">
-                          <div className="flex-shrink-0">
+                        <div className="flex items-start grow">
+                          <div className="shrink-0">
                             <FileTextIcon className="h-5 w-5 md:h-6 md:w-6 text-blue-500" />
                           </div>
-                          <div className="ml-3 md:ml-4 flex-grow">
+                          <div className="ml-3 md:ml-4 grow">
                             <div className="flex flex-wrap items-center gap-1 md:gap-2 justify-between w-full">
                               <div className="flex items-center gap-1 md:gap-2">
                                 <h3 className="text-sm md:text-base font-medium">{month.formattedPeriod}工作月报</h3>
                               {renderReportStatus(month.reportStatus)}
                             </div>
-                              <div className="flex items-center space-x-1 md:space-x-2">
+                              <div className="flex items-center gap-1 md:gap-2">
                                 {month.reportStatus === "generated" && (
-                                  <button
+                                  <Button variant="outline" size="sm"
                                     onClick={() => handlePreviewReport("monthly", month.formattedPeriod)}
-                                    className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-gray-300 text-xs md:text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                                   >
-                                    <EyeIcon className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-1" />
+                                    <EyeIcon data-icon="inline-start" />
                                     预览
-                                  </button>
+                                  </Button>
                                 )}
                                 {(month.reportStatus === "pending" || month.reportStatus === "generated") && (
-                                  <button
+                                  <Button variant="outline" size="sm"
                                     onClick={() => handleGenerateReport("monthly", month.formattedPeriod)}
                                     disabled={generatingReportId === `monthly-${month.formattedPeriod}`}
-                                    className="inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 border border-blue-300 text-xs md:text-sm font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50"
+                                    className="border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50"
                                   >
-                                    <RefreshCwIcon className={`h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-1 ${generatingReportId === `monthly-${month.formattedPeriod}` ? 'animate-spin' : ''}`} />
+                                    {generatingReportId === `monthly-${month.formattedPeriod}` ? <Spinner data-icon="inline-start" /> : <RefreshCwIcon data-icon="inline-start" />}
                                     <span className="hidden md:inline">{generatingReportId === `monthly-${month.formattedPeriod}` ? '生成中...' : '生成月报'}</span>
                                     <span className="inline md:hidden">{generatingReportId === `monthly-${month.formattedPeriod}` ? '生成中' : '生成'}</span>
-                                  </button>
+                                  </Button>
                                 )}
                               </div>
                             </div>
-                            <div className="mt-0.5 md:mt-1 flex items-center text-xs md:text-sm text-gray-500">
-                              <CalendarIcon className="h-3 w-3 md:h-4 md:w-4 mr-1" />
+                            <div className="mt-0.5 md:mt-1 text-xs md:text-sm text-gray-500">
                               <span>{format(month.startDate, 'yyyy-MM-dd')} 至 {format(month.endDate, 'yyyy-MM-dd')}</span>
                             </div>
                             <div className="mt-1 md:mt-2">
@@ -1304,32 +1290,15 @@ export default function ReportsPage() {
                                   const date = parseISO(day.date);
                                   const dayOfWeek = date.getDay();
                                   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-                                  
-                                  // 已计划的日报使用蓝色
-                                  let bgColor = day.is_plan 
-                                    ? 'bg-blue-500'
-                                    : day.hasReport 
-                                      ? 'bg-green-500' 
-                                      : 'bg-gray-200';
-                                  
-                                  if (isWeekend) {
-                                    bgColor = day.is_plan 
-                                      ? 'bg-blue-400'
-                                      : day.hasReport 
-                                        ? 'bg-green-400' 
-                                        : 'bg-gray-100';
-                                  }
-                                  
-                                  // 设置提示文本
-                                  let statusText = day.hasReport ? '已填报' : '未填报';
-                                  if (day.is_plan) {
-                                    statusText = '已计划';
-                                  }
-                                  
+
+                                  // 状态色统一由 lib/utils/status-colors 提供（与共用函数一致）
+                                  const statusStyle = getWorkStatusStyle(day.hasReport ? '已完成' : '未开始');
+                                  const statusText = day.hasReport ? '已填报' : '未填报';
+
                                   return (
-                                    <div 
+                                    <div
                                       key={day.date + '-' + index}
-                                      className={`w-2 h-2 md:w-3 md:h-3 rounded-sm ${bgColor}`}
+                                      className={cn('w-2 h-2 md:w-3 md:h-3 rounded-sm', statusStyle.solidClassName, isWeekend && 'opacity-60')}
                                       title={`${day.date}${isWeekend ? ' (周末)' : ''}: ${statusText}`}
                                     />
                                   );
@@ -1347,15 +1316,22 @@ export default function ReportsPage() {
                     </li>
                   ))
                 ) : (
-                  <li className="p-3 md:p-4 text-center text-xs md:text-sm text-gray-500">
-                    {currentYear}年暂无月报记录
+                  <li className="p-3 md:p-4">
+                    <Empty>
+                      <EmptyHeader>
+                        <EmptyTitle>{currentYear}年暂无月报记录</EmptyTitle>
+                      </EmptyHeader>
+                    </Empty>
                   </li>
                 )}
               </ul>
             )}
           </div>
         )}
-      </div>
+        </CardContent>
+      </Card>
+      </TabsContent>
+      </Tabs>
       
       {/* 报告预览模态框 */}
       {previewData && (

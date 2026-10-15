@@ -1,12 +1,17 @@
 
 // 统一的 JSON API 请求封装：自动拼装、解析错误并在 401 时跳登录页。
 
-export class ApiError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
+export class ApiError extends Error {}
+
+// 错误体可能是 { error: string }，也可能是 OpenAI 风格的 { error: { message } }（如 /api/ai 透传上游）。
+function extractErrorMessage(data: unknown, status: number): string {
+  const err = (data as { error?: unknown } | null)?.error;
+  if (typeof err === 'string' && err) return err;
+  if (err && typeof err === 'object') {
+    const msg = (err as { message?: unknown }).message;
+    if (typeof msg === 'string' && msg) return msg;
   }
+  return `请求失败（${status}）`;
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -16,7 +21,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   });
   if (res.status === 401 && typeof window !== 'undefined') {
     const p = window.location.pathname;
-    if (!['/login', '/signup', '/forgot-password', '/reset-password'].includes(p)) {
+    if (!['/', '/login', '/signup', '/forgot-password', '/reset-password'].includes(p)) {
       window.location.href = '/login';
     }
   }
@@ -27,9 +32,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     // 无 body（如 204）
   }
   if (!res.ok) {
-    const message =
-      (data as { error?: string } | null)?.error || `请求失败（${res.status}）`;
-    throw new ApiError(res.status, message);
+    throw new ApiError(extractErrorMessage(data, res.status));
   }
   return data as T;
 }

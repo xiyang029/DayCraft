@@ -6,9 +6,7 @@ import type { LocalUser, UserProfile } from '../lib/db/types';
 interface AuthContextType {
   user: LocalUser | null;
   profile: UserProfile | null;
-  session: null;
   loading: boolean;
-  isInitialized: boolean;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<null>;
 }
@@ -16,9 +14,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   profile: null,
-  session: null,
   loading: true,
-  isInitialized: false,
   signOut: async () => {},
   refreshSession: async () => null,
 });
@@ -27,7 +23,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<LocalUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isInitialized, setIsInitialized] = useState(false);
   const navigate = useNavigate();
 
   const refreshSession = useCallback(async () => {
@@ -47,7 +42,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return null;
     } finally {
       setLoading(false);
-      setIsInitialized(true);
     }
   }, []);
 
@@ -71,17 +65,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
-      setUser(null);
-      setProfile(null);
     } catch (error) {
       console.error('退出登录时出错:', error);
     } finally {
+      // 先跳转再清状态：否则 DashboardLayout 的登录守卫会先看到“dashboard 下无用户”，
+      // 把本次跳转顶回 /login
+      navigate('/');
+      setUser(null);
+      setProfile(null);
       setLoading(false);
-      navigate('/login');
     }
   };
 
-  const value = { user, profile, session: null, loading, isInitialized, signOut, refreshSession };
+  const value = { user, profile, loading, signOut, refreshSession };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -27,39 +27,39 @@ export function getDb(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   // 历史迁移：钉钉集成已下线，删除遗留表（新库无此表，DROP 幂等无害）
   db.exec('DROP TABLE IF EXISTS user_dingtalk_settings;');
-  // 历史迁移：AI 调用次数限额已下线，删除遗留列（新库无此列，老库幂等清理）
+  // 历史迁移：公开分享已下线，删除分享表（先删子表再删主表；新库无此表，DROP 幂等无害）
+  db.exec('DROP TABLE IF EXISTS work_breakdown_share_projects;');
+  db.exec('DROP TABLE IF EXISTS work_breakdown_shares;');
+  // 历史迁移：待办管理已下线，删除待办表（新库无此表，DROP 幂等无害）
+  db.exec('DROP TABLE IF EXISTS project_todos;');
+  // 历史迁移：已下线字段，删除遗留列（新库无此列，老库幂等清理）
   // 历史迁移：系统内置 AI 已下线，只保留用户自定义，删除 settings_type 列
-  for (const col of [
-    'system_ai_remaining_calls',
-    'system_ai_total_calls_limit',
-    'system_ai_calls',
-    'custom_ai_calls',
-    'settings_type',
-  ]) {
+  const dropColumns: Array<[string, string]> = [
+    ['user_ai_settings', 'system_ai_remaining_calls'],
+    ['user_ai_settings', 'system_ai_total_calls_limit'],
+    ['user_ai_settings', 'system_ai_calls'],
+    ['user_ai_settings', 'custom_ai_calls'],
+    ['user_ai_settings', 'settings_type'],
+    // 历史迁移：头像/上次登录时间已下线
+    ['user_profiles', 'avatar_url'],
+    ['user_profiles', 'last_sign_in_at'],
+    // 历史迁移：工作计划字段已下线（日报/项目周报不再区分计划）
+    ['daily_reports', 'is_plan'],
+    ['project_weekly_reports', 'is_plan'],
+    // 历史迁移：里程碑字段已下线
+    ['work_breakdown_items', 'is_milestone'],
+  ];
+  for (const [table, col] of dropColumns) {
     try {
-      const cols = db
-        .prepare(`PRAGMA table_info(user_ai_settings)`)
-        .all() as Array<{ name: string }>;
+      const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
       if (cols.some((c) => c.name === col)) {
-        db.exec(`ALTER TABLE user_ai_settings DROP COLUMN ${col};`);
+        db.exec(`ALTER TABLE ${table} DROP COLUMN ${col};`);
       }
     } catch {
       // 老版本 SQLite 不支持 DROP COLUMN 时忽略，列残留但业务不再读写
     }
   }
   return db;
-}
-
-/** 仅测试 / 脚本使用：关闭并重置单例。 */
-export function closeDb() {
-  if (db) {
-    try {
-      db.close();
-    } catch {
-      // ignore
-    }
-    db = null;
-  }
 }
 
 export function nowIso(): string {

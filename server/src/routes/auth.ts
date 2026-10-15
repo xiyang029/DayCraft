@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { getDb, newId, nowIso } from '../lib/database';
-import { issueCaptcha } from '../lib/captcha';
-import { verifyCaptcha } from '../lib/captcha';
+import { issueCaptcha, verifyCaptcha } from '../lib/captcha';
 import {
   clearSessionCookie,
   comparePassword,
@@ -11,7 +10,6 @@ import {
   isValidEmail,
   normalizeEmail,
   setSessionCookie,
-  touchSignIn,
 } from '../lib/session';
 
 const router = Router();
@@ -71,7 +69,7 @@ router.post('/signup', async (req, res) => {
       return res.status(400).json({ error: '密码长度至少为6个字符' });
     }
     if (!verifyCaptcha(body.captchaToken, body.captcha)) {
-      return res.status(400).json({ error: '验证码不正确或已过期，请刷新后重试' });
+      return res.status(400).json({ error: '验证码不正确或已过期，请重试' });
     }
 
     const db = getDb();
@@ -93,8 +91,8 @@ router.post('/signup', async (req, res) => {
       now,
     );
     db.prepare(
-      `INSERT INTO user_profiles (id, email, full_name, avatar_url, role, created_at, updated_at)
-       VALUES (?, ?, ?, NULL, ?, ?, ?)`,
+      `INSERT INTO user_profiles (id, email, full_name, role, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     ).run(userId, email, name || email.split('@')[0], isFirstUser ? '["admin","user"]' : '["user"]', now, now);
     seedDefaultSettings(userId, now);
 
@@ -122,7 +120,7 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: '请输入邮箱和密码' });
     }
     if (!verifyCaptcha(body.captchaToken, body.captcha)) {
-      return res.status(400).json({ error: '验证码不正确或已过期，请刷新后重试' });
+      return res.status(400).json({ error: '验证码不正确或已过期，请重试' });
     }
 
     const db = getDb();
@@ -133,7 +131,6 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: '邮箱或密码不正确' });
     }
 
-    touchSignIn(user.id);
     const token = await createSessionCookie({ id: user.id, email: user.email });
     setSessionCookie(res, token);
     return res.json({ user: { id: user.id, email: user.email } });
@@ -163,8 +160,8 @@ router.get('/me', async (req, res) => {
     if (!profile) {
       const now = new Date().toISOString();
       db.prepare(
-        `INSERT INTO user_profiles (id, email, full_name, avatar_url, role, created_at, updated_at)
-         VALUES (?, ?, ?, NULL, '["user"]', ?, ?)`,
+        `INSERT INTO user_profiles (id, email, full_name, role, created_at, updated_at)
+         VALUES (?, ?, ?, '["user"]', ?, ?)`,
       ).run(user.id, user.email, user.email.split('@')[0], now, now);
       profile = db.prepare('SELECT * FROM user_profiles WHERE id = ?').get(user.id) as Record<
         string,
@@ -205,7 +202,7 @@ router.post('/reset-password', async (req, res) => {
       return res.status(400).json({ error: '密码长度至少为6个字符' });
     }
     if (!verifyCaptcha(body.captchaToken, body.captcha)) {
-      return res.status(400).json({ error: '验证码不正确或已过期，请刷新后重试' });
+      return res.status(400).json({ error: '验证码不正确或已过期，请重试' });
     }
 
     const db = getDb();

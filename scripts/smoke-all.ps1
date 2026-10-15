@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-  DayCraft 全接口冒烟测试：覆盖全部 48 个 API 端点，外加校验分支、鉴权分支、跨用户隔离。
+  DayCraft 全接口冒烟测试：覆盖全部 31 个 API 端点，外加校验分支、鉴权分支、跨用户隔离。
 
 .DESCRIPTION
   必须跑在 pwsh 7+（Windows PowerShell 5.1 会把 UTF-8 中文响应解析成乱码，
@@ -182,11 +182,17 @@ Assert-Api -Name 'GET /api/admin/overview 未登录 -> 401' -Method GET -Path '/
 Assert-Api -Name 'GET /api/work-breakdown/items 未登录 -> 401' -Method GET -Path '/api/work-breakdown/items?project_id=x' -Session $anonSess `
   -Expect @(401) | Out-Null
 
+Assert-Api -Name 'GET /api/users 未登录 -> 401' -Method GET -Path '/api/users' -Session $anonSess `
+  -Expect @(401) | Out-Null
+
 Assert-Api -Name 'GET /api/不存在的接口 -> 404 兜底' -Method GET -Path '/api/no-such-endpoint' -Session $anonSess `
   -Expect @(404) -Contains '接口不存在' | Out-Null
 
-Assert-Api -Name 'GET /api/share/非法token -> 404' -Method GET -Path '/api/share/not-a-token' -Session $anonSess `
-  -Expect @(404) -Contains '分享链接无效' | Out-Null
+Assert-Api -Name 'POST /api/ai 未登录 -> 401' -Method POST -Path '/api/ai' -Session $anonSess `
+  -Body @{ model = 'x'; messages = @(@{ role = 'user'; content = 'hi' }) } -Expect @(401) | Out-Null
+
+Assert-Api -Name 'POST /api/ai/test 未登录 -> 401' -Method POST -Path '/api/ai/test' -Session $anonSess `
+  -Body @{} -Expect @(401) | Out-Null
 
 # ============================================================
 Write-Section 'B. 注册 / 登录 / 会话（第一个用户自动为管理员）'
@@ -202,7 +208,7 @@ Assert-Api -Name 'POST /api/auth/signup 密码过短 -> 400' -Method POST -Path 
 
 Assert-Api -Name 'POST /api/auth/signup 验证码错误 -> 400' -Method POST -Path '/api/auth/signup' -Session $anonSess `
   -Body @{ email = $adminEmail; password = $password; captchaToken = 'deadbeef'; captcha = 'ZZZZ' } `
-  -Expect @(400) -Contains '验证码不正确或已过期，请刷新后重试' | Out-Null
+  -Expect @(400) -Contains '验证码不正确或已过期，请重试' | Out-Null
 
 $capAdmin = New-Captcha -Session $adminSess
 $adminSignup = Assert-Api -Name 'POST /api/auth/signup 管理员注册 -> 200' -Method POST -Path '/api/auth/signup' `
@@ -264,6 +270,16 @@ Assert-Api -Name 'GET /api/auth/me 普通用户角色不含 admin' -Method GET -
 
 Assert-Api -Name 'GET /api/admin/overview 非管理员 -> 403' -Method GET -Path '/api/admin/overview' -Session $userSess `
   -Expect @(403) -Contains '需要管理员权限' | Out-Null
+
+Assert-Api -Name 'GET /api/users 登录后可见用户列表' -Method GET -Path '/api/users' -Session $userSess `
+  -Expect @(200) -Verify {
+    param($j)
+    if ($null -eq $j.users -or $j.users.Count -lt 2) { return "用户数应 >= 2，实得 $($j.users.Count)" }
+    foreach ($u in $j.users) {
+      if (-not $u.id -or -not $u.email) { return '用户条目缺少 id/email' }
+    }
+    return $null
+  } | Out-Null
 
 Assert-Api -Name 'GET /api/admin/overview 管理员 -> 200' -Method GET -Path '/api/admin/overview' -Session $adminSess `
   -Expect @(200) -Verify {
@@ -350,12 +366,6 @@ Assert-Api -Name 'GET /api/projects 列表含新项目' -Method GET -Path '/api/
 Assert-Api -Name 'GET /api/projects?active_only=true 过滤' -Method GET -Path '/api/projects?active_only=true' -Session $adminSess `
   -Expect @(200) | Out-Null
 
-Assert-Api -Name 'GET /api/projects/:id 详情' -Method GET -Path "/api/projects/$projectId" -Session $adminSess `
-  -Expect @(200) -Contains "SMK$stamp" | Out-Null
-
-Assert-Api -Name 'GET /api/projects/:id 不存在 -> 404' -Method GET -Path '/api/projects/no-such-project' -Session $adminSess `
-  -Expect @(404) -Contains '项目不存在' | Out-Null
-
 Assert-Api -Name 'PUT /api/projects/:id 更新 -> 200' -Method PUT -Path "/api/projects/$projectId" -Session $adminSess `
   -Body @{ description = '冒烟用项目（已更新）'; is_active = $false } -Expect @(200) -Contains '项目更新成功' | Out-Null
 
@@ -377,7 +387,7 @@ Assert-Api -Name 'POST /api/daily-reports 借用他人项目 -> 403' -Method POS
   -Expect @(403) -Contains '包含不属于你的项目' | Out-Null
 
 $daily = Assert-Api -Name 'POST /api/daily-reports 正常保存 -> 201' -Method POST -Path '/api/daily-reports' -Session $adminSess `
-  -Body @{ date = $today; is_plan = $false; items = @(@{ project_id = $projectId; content = '完成冒烟接口' }) } `
+  -Body @{ date = $today; items = @(@{ project_id = $projectId; content = '完成冒烟接口' }) } `
   -Expect @(201) -Contains '日报保存成功'
 $dailyId = [string]$daily.report.id
 
@@ -398,13 +408,6 @@ Assert-Api -Name 'GET /api/daily-reports?with_items=1 含明细与项目信息' 
 
 Assert-Api -Name 'GET /api/daily-reports?start=&end= 区间查询' -Method GET -Path "/api/daily-reports?start=$today&end=$today" -Session $adminSess `
   -Expect @(200) | Out-Null
-
-Assert-Api -Name 'PUT /api/daily-reports/:id 全量更新 -> 200' -Method PUT -Path "/api/daily-reports/$dailyId" -Session $adminSess `
-  -Body @{ is_plan = $true; items = @(@{ project_id = $projectId; content = '更新后的内容' }) } `
-  -Expect @(200) -Contains '日报更新成功' | Out-Null
-
-Assert-Api -Name 'PUT /api/daily-reports/:id 不存在 -> 404' -Method PUT -Path '/api/daily-reports/no-such-report' -Session $adminSess `
-  -Body @{ is_plan = $false } -Expect @(404) -Contains '日报不存在' | Out-Null
 
 Assert-Api -Name 'POST /api/daily-reports 同日期 upsert -> 201' -Method POST -Path '/api/daily-reports' -Session $adminSess `
   -Body @{ date = $today; items = @(@{ project_id = $projectId; content = 'upsert 覆盖' }) } -Expect @(201) | Out-Null
@@ -428,97 +431,6 @@ Assert-Api -Name 'GET /api/daily-reports 删除后为空' -Method GET -Path '/ap
     if ($j.total -ne 0) { return "删除后应为 0 条，实得 $($j.total)" }
     return $null
   } | Out-Null
-
-# ============================================================
-Write-Section 'G. 日报条目'
-
-Assert-Api -Name 'POST /api/report-items 缺字段 -> 400' -Method POST -Path '/api/report-items' -Session $adminSess `
-  -Body @{ project_id = $projectId } -Expect @(400) -Contains '项目与内容不能为空' | Out-Null
-
-Assert-Api -Name 'POST /api/report-items 项目不存在 -> 404' -Method POST -Path '/api/report-items' -Session $adminSess `
-  -Body @{ project_id = 'no-such-project'; content = 'x' } -Expect @(404) -Contains '项目不存在' | Out-Null
-
-$item = Assert-Api -Name 'POST /api/report-items 传 date 自动建日报 -> 201' -Method POST -Path '/api/report-items' -Session $adminSess `
-  -Body @{ date = $otherDay; project_id = $projectId; content = '待办联动条目' } -Expect @(201)
-$itemId = [string]$item.item.id
-
-Assert-Api -Name 'GET /api/daily-reports 自动建的日报已落库' -Method GET -Path "/api/daily-reports?date=$otherDay" -Session $adminSess `
-  -Expect @(200) -Verify {
-    param($j)
-    if ($j.total -ne 1) { return "应自动建 1 条日报，实得 $($j.total)" }
-    return $null
-  } | Out-Null
-
-Assert-Api -Name 'DELETE /api/report-items/:id -> 200' -Method DELETE -Path "/api/report-items/$itemId" -Session $adminSess `
-  -Expect @(200) -Contains '删除成功' | Out-Null
-
-Assert-Api -Name 'DELETE /api/report-items/:id 不存在 -> 404' -Method DELETE -Path "/api/report-items/$itemId" -Session $adminSess `
-  -Expect @(404) -Contains '日报条目不存在' | Out-Null
-
-# ============================================================
-Write-Section 'H. 待办'
-
-Assert-Api -Name 'POST /api/project-todos 缺项目 -> 400' -Method POST -Path '/api/project-todos' -Session $adminSess `
-  -Body @{ content = 'x'; due_date = $today } -Expect @(400) -Contains '请选择项目' | Out-Null
-
-Assert-Api -Name 'POST /api/project-todos 缺截止日期 -> 400' -Method POST -Path '/api/project-todos' -Session $adminSess `
-  -Body @{ project_id = $projectId; content = 'x' } -Expect @(400) -Contains '截止日期格式不正确' | Out-Null
-
-Assert-Api -Name 'POST /api/project-todos 非法优先级 -> 400' -Method POST -Path '/api/project-todos' -Session $adminSess `
-  -Body @{ project_id = $projectId; content = 'x'; due_date = $today; priority = 'urgent' } `
-  -Expect @(400) -Contains '优先级不正确' | Out-Null
-
-Assert-Api -Name 'POST /api/project-todos 非法状态 -> 400' -Method POST -Path '/api/project-todos' -Session $adminSess `
-  -Body @{ project_id = $projectId; content = 'x'; due_date = $today; status = 'done' } `
-  -Expect @(400) -Contains '状态不正确' | Out-Null
-
-$todo = Assert-Api -Name 'POST /api/project-todos 正常创建 -> 201' -Method POST -Path '/api/project-todos' -Session $adminSess `
-  -Body @{ project_id = $projectId; content = '冒烟待办'; due_date = $today; priority = 'high' } `
-  -Expect @(201) -Contains '待办创建成功'
-$todoId = [string]$todo.todo.id
-
-Assert-Api -Name 'GET /api/project-todos 列表含项目信息' -Method GET -Path '/api/project-todos' -Session $adminSess `
-  -Expect @(200) -Verify {
-    param($j)
-    if ($j.total -lt 1) { return '待办列表为空' }
-    $hit = $j.todos | Where-Object { $_.id -eq $todoId }
-    if (-not $hit) { return '未找到刚创建的待办' }
-    if ($hit.project.name -ne "冒烟项目$stamp") { return '待办未关联项目名称' }
-    return $null
-  } | Out-Null
-
-Assert-Api -Name 'GET /api/project-todos?status=active 过滤' -Method GET -Path '/api/project-todos?status=active' -Session $adminSess `
-  -Expect @(200) -Verify {
-    param($j)
-    if (($j.todos | Where-Object { $_.status -eq 'completed' }).Count -gt 0) { return 'active 过滤仍返回已完成项' }
-    return $null
-  } | Out-Null
-
-Assert-Api -Name 'GET /api/project-todos?project_id= 过滤' -Method GET -Path "/api/project-todos?project_id=$projectId" -Session $adminSess `
-  -Expect @(200) | Out-Null
-
-Assert-Api -Name 'GET /api/project-todos/:id 详情' -Method GET -Path "/api/project-todos/$todoId" -Session $adminSess `
-  -Expect @(200) -Contains '冒烟待办' | Out-Null
-
-Assert-Api -Name 'PUT /api/project-todos/:id 标记完成 -> 200' -Method PUT -Path "/api/project-todos/$todoId" -Session $adminSess `
-  -Body @{ status = 'completed' } -Expect @(200) -Verify {
-    param($j)
-    if ($j.todo.status -ne 'completed') { return "状态未更新: $($j.todo.status)" }
-    if (-not $j.todo.completed_at) { return 'completed_at 未回填' }
-    return $null
-  } | Out-Null
-
-Assert-Api -Name 'GET /api/project-todos?status=completed 已完成列表' -Method GET -Path '/api/project-todos?status=completed' -Session $adminSess `
-  -Expect @(200) | Out-Null
-
-Assert-Api -Name 'PUT /api/project-todos/:id 不存在 -> 404' -Method PUT -Path '/api/project-todos/no-such-todo' -Session $adminSess `
-  -Body @{ status = 'completed' } -Expect @(404) -Contains '待办不存在' | Out-Null
-
-Assert-Api -Name 'DELETE /api/project-todos/:id -> 200' -Method DELETE -Path "/api/project-todos/$todoId" -Session $adminSess `
-  -Expect @(200) -Contains '待办删除成功' | Out-Null
-
-Assert-Api -Name 'GET /api/project-todos/:id 删除后 -> 404' -Method GET -Path "/api/project-todos/$todoId" -Session $adminSess `
-  -Expect @(404) | Out-Null
 
 # ============================================================
 Write-Section 'I. 周报 / 月报'
@@ -586,7 +498,7 @@ Assert-Api -Name 'POST /api/project-weekly-reports 借用他人项目 -> 403' -M
 
 $pw = Assert-Api -Name 'POST /api/project-weekly-reports 新建 -> 201' -Method POST -Path '/api/project-weekly-reports' -Session $adminSess `
   -Body @{
-    year = 2026; week_number = 41; start_date = '2026-10-05'; end_date = '2026-10-11'; is_plan = $false
+    year = 2026; week_number = 41; start_date = '2026-10-05'; end_date = '2026-10-11'
     items = @(@{ project_id = $projectId; content = '项目周报条目'; project_name = "冒烟项目$stamp"; project_code = "SMK$stamp" })
   } -Expect @(201) -Contains '项目周报保存成功'
 $pwId = [string]$pw.report.id
@@ -656,12 +568,12 @@ Assert-Api -Name 'GET /api/work-breakdown/items/:id 不存在 -> 404' -Method GE
   -Expect @(404) -Contains '工作项不存在' | Out-Null
 
 Assert-Api -Name 'PUT /api/work-breakdown/items/:id 更新字段 -> 200' -Method PUT -Path "/api/work-breakdown/items/$childId" -Session $adminSess `
-  -Body @{ name = '冒烟子项（改）'; status = '已完成'; is_milestone = $true; progress_notes = '已收尾' } `
+  -Body @{ name = '冒烟子项（改）'; status = '已完成'; progress_notes = '已收尾' } `
   -Expect @(200) -Verify {
     param($j)
     if ($j.item.name -ne '冒烟子项（改）') { return "name 未更新: $($j.item.name)" }
     if ($j.item.status -ne '已完成') { return "status 未更新: $($j.item.status)" }
-    if ($j.item.is_milestone -ne $true) { return 'is_milestone 未更新' }
+    if ($j.item.progress_notes -ne '已收尾') { return 'progress_notes 未更新' }
     return $null
   } | Out-Null
 
@@ -682,97 +594,7 @@ Assert-Api -Name 'DELETE /api/work-breakdown/items/:id 不存在 -> 404' -Method
   -Expect @(404) -Contains '工作项不存在' | Out-Null
 
 # ============================================================
-Write-Section 'L. 工作分解分享（管理端）'
-
-Assert-Api -Name 'POST /api/work-breakdown/share 空 project_ids -> 400' -Method POST -Path '/api/work-breakdown/share' -Session $adminSess `
-  -Body @{ project_ids = @() } -Expect @(400) -Contains '请选择要分享的项目' | Out-Null
-
-Assert-Api -Name 'POST /api/work-breakdown/share 借用他人项目 -> 403' -Method POST -Path '/api/work-breakdown/share' -Session $userSess `
-  -Body @{ project_ids = @($projectId) } -Expect @(403) -Contains '包含不属于你的项目' | Out-Null
-
-Assert-Api -Name 'POST /api/work-breakdown/share 非法过期时间 -> 400' -Method POST -Path '/api/work-breakdown/share' -Session $adminSess `
-  -Body @{ project_ids = @($projectId); expires_at = 'not-a-date' } -Expect @(400) -Contains '过期时间格式不正确' | Out-Null
-
-$shareRes = Assert-Api -Name 'POST /api/work-breakdown/share 创建带密码分享 -> 201' -Method POST -Path '/api/work-breakdown/share' -Session $adminSess `
-  -Body @{ project_ids = @($projectId); password = 'sharepass123' } -Expect @(201) -Contains '分享创建成功'
-$shareId = [string]$shareRes.share.id
-$shareToken = [string]$shareRes.share.share_token
-
-Assert-Api -Name 'POST /api/work-breakdown/share 响应不回传密码哈希' -Method GET -Path "/api/work-breakdown/share/$shareId" -Session $adminSess `
-  -Expect @(200) -Verify {
-    param($j)
-    if ($null -ne $j.share.password_hash) { return '响应泄漏了 password_hash' }
-    if ($j.share.has_password -ne $true) { return 'has_password 应为 true' }
-    if ($j.share.projects.Count -ne 1) { return '未回传关联项目' }
-    return $null
-  } | Out-Null
-
-Assert-Api -Name 'GET /api/work-breakdown/share 列表' -Method GET -Path '/api/work-breakdown/share' -Session $adminSess `
-  -Expect @(200) -Verify {
-    param($j)
-    if (($j.shares | Where-Object { $_.id -eq $shareId }).Count -ne 1) { return '列表中未找到刚创建的分享' }
-    return $null
-  } | Out-Null
-
-Assert-Api -Name 'GET /api/work-breakdown/share/:id?get_password=true' -Method GET -Path "/api/work-breakdown/share/$shareId`?get_password=true" -Session $adminSess `
-  -Expect @(200) -Contains 'has_password' | Out-Null
-
-Assert-Api -Name 'GET /api/work-breakdown/share/:id 不存在 -> 404' -Method GET -Path '/api/work-breakdown/share/no-such-share' -Session $adminSess `
-  -Expect @(404) -Contains '分享不存在' | Out-Null
-
-Assert-Api -Name 'PUT /api/work-breakdown/share/:id 非法过期时间 -> 400' -Method PUT -Path "/api/work-breakdown/share/$shareId" -Session $adminSess `
-  -Body @{ expires_at = 'garbage' } -Expect @(400) -Contains '过期时间格式不正确' | Out-Null
-
-Assert-Api -Name 'PUT /api/work-breakdown/share/:id 更新 -> 200' -Method PUT -Path "/api/work-breakdown/share/$shareId" -Session $adminSess `
-  -Body @{ is_active = $true; expires_at = '2099-12-31T00:00:00.000Z' } -Expect @(200) -Contains '分享更新成功' | Out-Null
-
-Assert-Api -Name 'DELETE /api/work-breakdown/share 清理过期分享 -> 200' -Method DELETE -Path '/api/work-breakdown/share' -Session $adminSess `
-  -Expect @(200) -Contains '清理完成' | Out-Null
-
-# ============================================================
-Write-Section 'M. 公开分享访问（无鉴权）'
-
-Assert-Api -Name 'GET /api/share/:token 无密码 -> 401 要求密码' -Method GET -Path "/api/share/$shareToken" -Session $anonSess `
-  -Expect @(401) -Verify {
-    param($j)
-    if ($j.need_password -ne $true) { return '缺少 need_password 标记' }
-    return $null
-  } | Out-Null
-
-Assert-Api -Name 'GET /api/share/:token 错误密码 -> 403' -Method GET -Path "/api/share/$shareToken`?password=wrongpass" -Session $anonSess `
-  -Expect @(403) -Contains '访问密码不正确' | Out-Null
-
-Assert-Api -Name 'GET /api/share/:token 正确密码 -> 200 返回工作项树' -Method GET -Path "/api/share/$shareToken`?password=sharepass123" -Session $anonSess `
-  -Expect @(200) -Verify {
-    param($j)
-    if ($j.project.id -ne $projectId) { return 'project 不匹配' }
-    if ($j.available_projects.Count -ne 1) { return 'available_projects 数量异常' }
-    if ($null -eq $j.work_items) { return '缺少 work_items 树' }
-    if ($j.work_items[0].children -isnot [array]) { return 'work_items 未构造成树' }
-    if (-not $j.share_info.shared_by) { return '缺少 shared_by' }
-    return $null
-  } | Out-Null
-
-Assert-Api -Name 'GET /api/share/:token?project_id= 指定项目' -Method GET -Path "/api/share/$shareToken`?password=sharepass123&project_id=$projectId" -Session $anonSess `
-  -Expect @(200) | Out-Null
-
-Assert-Api -Name 'POST /api/share/:token 错误密码 -> 403' -Method POST -Path "/api/share/$shareToken" -Session $anonSess `
-  -Body @{ password = 'wrongpass' } -Expect @(403) -Contains '访问密码不正确' | Out-Null
-
-Assert-Api -Name 'POST /api/share/:token 正确密码 -> 200' -Method POST -Path "/api/share/$shareToken" -Session $anonSess `
-  -Body @{ password = 'sharepass123' } -Expect @(200) -Verify { param($j) if ($j.ok -ne $true) { return 'ok 不为 true' } return $null } | Out-Null
-
-Assert-Api -Name 'DELETE /api/work-breakdown/share/:id 删除分享 -> 200' -Method DELETE -Path "/api/work-breakdown/share/$shareId" -Session $adminSess `
-  -Expect @(200) -Contains '分享删除成功' | Out-Null
-
-Assert-Api -Name 'GET /api/share/:token 删除后 -> 404' -Method GET -Path "/api/share/$shareToken`?password=sharepass123" -Session $anonSess `
-  -Expect @(404) -Contains '分享链接无效或已过期' | Out-Null
-
-# ============================================================
 Write-Section 'N. 跨用户隔离与级联删除'
-
-Assert-Api -Name 'GET /api/projects/:id 他人项目 -> 404' -Method GET -Path "/api/projects/$projectId" -Session $userSess `
-  -Expect @(404) -Contains '项目不存在' | Out-Null
 
 Assert-Api -Name 'PUT /api/projects/:id 他人项目 -> 404' -Method PUT -Path "/api/projects/$projectId" -Session $userSess `
   -Body @{ description = '越权修改' } -Expect @(404) | Out-Null
@@ -782,9 +604,6 @@ Assert-Api -Name 'DELETE /api/projects/:id 他人项目 -> 404' -Method DELETE -
 
 Assert-Api -Name 'GET /api/daily-reports 他人看不到自己的日报' -Method GET -Path '/api/daily-reports' -Session $userSess `
   -Expect @(200) -Verify { param($j) if ($j.total -ne 0) { return "他人日报泄漏: $($j.total) 条" } return $null } | Out-Null
-
-Assert-Api -Name 'GET /api/work-breakdown/share 他人看不到自己的分享' -Method GET -Path '/api/work-breakdown/share' -Session $userSess `
-  -Expect @(200) -Verify { param($j) if ($j.total -ne 0) { return "他人分享泄漏: $($j.total) 条" } return $null } | Out-Null
 
 Assert-Api -Name 'GET /api/ai-settings 各用户设置独立' -Method GET -Path '/api/ai-settings' -Session $userSess `
   -Expect @(200) -Verify {

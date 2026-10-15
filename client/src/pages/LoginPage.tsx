@@ -4,6 +4,12 @@ import { Link } from 'react-router-dom';
 import { useNavigate } from 'react-router-dom';
 import { CaptchaInput, type CaptchaValue } from '../components/captcha-input';
 import { useAuth } from '../contexts/auth-context';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Field, FieldError, FieldLabel, FieldSeparator } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -11,6 +17,8 @@ export default function LoginPage() {
   const [captcha, setCaptcha] = useState<CaptchaValue>({ token: '', code: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 提交失败时递增，驱动验证码自动刷新（服务端验证码一次性核销，失败后旧码不可复用）
+  const [captchaRefresh, setCaptchaRefresh] = useState(0);
   const navigate = useNavigate();
   const { refreshSession } = useAuth();
   const loginAttemptRef = useRef<number>(0);
@@ -65,6 +73,7 @@ export default function LoginPage() {
       if (!res.ok) {
         setError(data.error || '登录失败');
         loginAttemptRef.current++;
+        setCaptchaRefresh((n) => n + 1);
       } else {
         loginAttemptRef.current = 0;
         // 先把服务端刚种下的会话 Cookie 同步到 AuthProvider，
@@ -72,107 +81,90 @@ export default function LoginPage() {
         await refreshSession();
         navigate('/dashboard/overview');
       }
-    } catch (err) {
+    } catch {
       setError('登录时出错，请检查网络连接或稍后重试');
       loginAttemptRef.current++;
+      setCaptchaRefresh((n) => n + 1);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center p-6 bg-blue-50">
-      <div className="w-full max-w-md bg-white rounded-lg shadow overflow-hidden">
-        <div className="px-6 py-8">
-          <h2 className="text-2xl font-bold text-center text-blue-600">登录 DayCraft</h2>
-          <p className="mt-2 text-sm text-center text-gray-500">
+    <div className="flex min-h-screen items-center justify-center bg-accent p-6">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl text-primary">登录 DayCraft</CardTitle>
+          <CardDescription>
             记录每日工作，高效生成周报月报
-          </p>
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-6">
+          <form className="flex flex-col gap-6" onSubmit={handleLogin}>
+            <Field>
+              <FieldLabel htmlFor="email">邮箱地址</FieldLabel>
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="请输入您的邮箱"
+              />
+              <FieldError errors={[]} />
+            </Field>
 
-          <form className="mt-8 space-y-6" onSubmit={handleLogin}>
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                邮箱地址
-              </label>
-              <div className="mt-1">
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  placeholder="请输入您的邮箱"
-                />
-              </div>
-            </div>
-
-            <div>
+            <Field>
               <div className="flex items-center justify-between">
-                <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                  密码
-                </label>
-                <Link to="/forgot-password" className="text-sm text-blue-600 hover:text-blue-500">
+                <FieldLabel htmlFor="password">密码</FieldLabel>
+                <Button variant="link" size="sm" render={<Link to="/forgot-password" />}>
                   忘记密码?
-                </Link>
+                </Button>
               </div>
-              <div className="mt-1">
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  placeholder="请输入您的密码"
-                />
-              </div>
-            </div>
+              <Input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="请输入您的密码"
+              />
+              <FieldError errors={[]} />
+            </Field>
 
-            <CaptchaInput onChange={setCaptcha} />
+            <CaptchaInput onChange={setCaptcha} refreshSignal={captchaRefresh} />
 
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
-                <span className="block sm:inline">{error}</span>
-              </div>
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
             )}
 
-            <div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? "登录中..." : "登录"}
-              </button>
-            </div>
+            <Button
+              type="submit"
+              disabled={loading}
+              className="w-full"
+            >
+              {loading && <Spinner data-icon="inline-start" />}
+              {loading ? "登录中..." : "登录"}
+            </Button>
           </form>
 
-          <div className="mt-6">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">没有账号?</span>
-              </div>
-            </div>
+          <FieldSeparator>没有账号?</FieldSeparator>
 
-            <div className="mt-6">
-              <Link
-                to="/signup"
-                className="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-              >
-                注册新账号
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
+          <Button
+            variant="outline"
+            className="w-full"
+            render={<Link to="/signup" />}
+          >
+            注册新账号
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

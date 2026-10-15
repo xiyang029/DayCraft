@@ -1,8 +1,5 @@
 import type { WorkBreakdownItem } from '../db/types';
 import { apiDelete, apiGet, apiPost, apiPut } from '../api';
-import { XMindConverter } from './xmind-converter';
-import { ExcelConverter } from './excel-converter';
-import { saveAs } from 'file-saver';
 
 // 前端工作项类型
 export interface WorkItem {
@@ -11,8 +8,6 @@ export interface WorkItem {
   description: string;
   children: WorkItem[];
   isExpanded?: boolean;
-  isEditing?: boolean;
-  shouldDelete?: boolean;
   dbId?: string;
   level: number;
   position: number;
@@ -24,7 +19,6 @@ export interface WorkItem {
   planned_end_time?: string;
   actual_start_time?: string;
   actual_end_time?: string;
-  is_milestone?: boolean;
 }
 
 // 缓存接口（按项目缓存，登录用户隐含在会话中）
@@ -38,8 +32,6 @@ interface Cache {
 export class WorkBreakdownService {
   private cache: Cache = {};
   private cacheDuration = 60000; // 缓存有效期1分钟
-  private xmindConverter = new XMindConverter();
-  private excelConverter = new ExcelConverter();
 
   // 拉取扁平列表（无缓存，供移动/校验等逻辑使用）
   private async getFlatItems(projectId: string): Promise<WorkBreakdownItem[]> {
@@ -49,8 +41,8 @@ export class WorkBreakdownService {
     return data.items;
   }
 
-  // 获取项目的工作分解项
-  async getWorkBreakdownItems(projectId: any, userId: any): Promise<WorkItem[]> {
+  // 获取项目的工作分解项（身份经会话 Cookie 识别，无需传 userId）
+  async getWorkBreakdownItems(projectId: any): Promise<WorkItem[]> {
     if (!projectId) {
       return [];
     }
@@ -82,7 +74,6 @@ export class WorkBreakdownService {
   // 添加工作项
   async addWorkItem(
     projectId: string,
-    userId: string,
     name: string,
     description: string,
     parentId: string | null,
@@ -96,7 +87,6 @@ export class WorkBreakdownService {
     planned_end_time: string = '',
     actual_start_time: string = '',
     actual_end_time: string = '',
-    is_milestone: boolean = false,
   ): Promise<{ id: string }> {
     const data = await apiPost<{ id: string }>('/api/work-breakdown/items', {
       project_id: projectId,
@@ -114,7 +104,6 @@ export class WorkBreakdownService {
       planned_end_time: planned_end_time || null,
       actual_start_time: actual_start_time || null,
       actual_end_time: actual_end_time || null,
-      is_milestone,
     });
 
     // 清除相关缓存
@@ -255,11 +244,10 @@ export class WorkBreakdownService {
   // 获取可作为父级的工作项列表（用于移动对话框）
   async getPotentialParents(
     projectId: string,
-    userId: string,
     excludeItemId: string,
   ): Promise<Array<{ id: string; name: string; level: number; path: string }>> {
     // 获取完整的工作项树结构
-    const workItemsTree = await this.getWorkBreakdownItems(projectId, userId);
+    const workItemsTree = await this.getWorkBreakdownItems(projectId);
     const flat = await this.getFlatItems(projectId);
     const byId = new Map(flat.map((i) => [i.id, i]));
 
@@ -344,147 +332,6 @@ export class WorkBreakdownService {
     }
   }
 
-  // 导出为XMind文件
-  async exportToXMind(workItems: WorkItem[], projectName: string): Promise<void> {
-    try {
-      const blob = await this.xmindConverter.exportToXMind(workItems, projectName);
-      // 使用file-saver保存文件
-      saveAs(blob, `${projectName || '工作分解'}.xmind`);
-      return Promise.resolve();
-    } catch (error) {
-      console.error('导出XMind文件失败', error);
-      throw new Error('导出XMind文件失败：' + (error instanceof Error ? error.message : '未知错误'));
-    }
-  }
-
-  // 导出为Excel文件
-  exportToExcel(workItems: WorkItem[], projectName: string): void {
-    try {
-      const blob = this.excelConverter.exportToExcel(workItems, projectName);
-      // 使用file-saver保存文件
-      saveAs(blob, `${projectName || '工作分解'}.xlsx`);
-    } catch (error) {
-      console.error('导出Excel文件失败', error);
-      throw new Error('导出Excel文件失败：' + (error instanceof Error ? error.message : '未知错误'));
-    }
-  }
-
-  // 导出为Excel层级合并版文件
-  exportToExcelHierarchy(workItems: WorkItem[], projectName: string): void {
-    try {
-      const blob = this.excelConverter.exportToExcelHierarchy(workItems, projectName);
-      // 使用file-saver保存文件
-      saveAs(blob, `${projectName || '工作分解'}_层级合并版.xlsx`);
-    } catch (error) {
-      console.error('导出Excel层级合并版文件失败', error);
-      throw new Error('导出Excel层级合并版文件失败：' + (error instanceof Error ? error.message : '未知错误'));
-    }
-  }
-
-  // 下载Excel导入模板
-  downloadExcelTemplate(): void {
-    try {
-      const blob = this.excelConverter.createImportTemplate();
-      // 使用file-saver保存文件
-      saveAs(blob, '工作分解导入模板.xlsx');
-    } catch (error) {
-      console.error('下载Excel模板失败', error);
-      throw new Error('下载Excel模板失败：' + (error instanceof Error ? error.message : '未知错误'));
-    }
-  }
-
-  // 从XMind文件导入
-  async importFromXMind(file: File, projectId: string, userId: string): Promise<WorkItem[]> {
-    try {
-      // 解析XMind文件
-      const importedItems = await this.xmindConverter.importFromXMind(file);
-
-      // 保存到数据库
-      await this.saveImportedItems(importedItems, projectId, userId);
-
-      // 清除缓存
-      this.invalidateCache(projectId);
-
-      // 重新获取工作分解项
-      return this.getWorkBreakdownItems(projectId, userId);
-    } catch (error) {
-      console.error('导入XMind文件失败', error);
-      throw new Error('导入XMind文件失败：' + (error instanceof Error ? error.message : '未知错误'));
-    }
-  }
-
-  // 从Excel文件导入
-  async importFromExcel(
-    file: File,
-    projectId: string,
-    userId: string,
-    progressCallback?: (progress: number) => void,
-  ): Promise<WorkItem[]> {
-    try {
-      // 解析Excel文件
-      const importedItems = await this.excelConverter.importFromExcel(file, progressCallback);
-
-      // 更新进度 - 开始保存到数据库
-      progressCallback?.(80);
-
-      // 保存到数据库
-      await this.saveImportedItems(importedItems, projectId, userId);
-
-      // 更新进度 - 数据库保存完成
-      progressCallback?.(90);
-
-      // 清除缓存
-      this.invalidateCache(projectId);
-
-      // 更新进度 - 完成
-      progressCallback?.(100);
-
-      // 重新获取工作分解项
-      return this.getWorkBreakdownItems(projectId, userId);
-    } catch (error) {
-      console.error('导入Excel文件失败', error);
-      throw new Error('导入Excel文件失败：' + (error instanceof Error ? error.message : '未知错误'));
-    }
-  }
-
-  // 保存导入的工作项
-  private async saveImportedItems(
-    items: WorkItem[],
-    projectId: string,
-    userId: string,
-    parentId: string | null = null,
-  ): Promise<void> {
-    // 按顺序保存工作项
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-
-      // 添加工作项
-      const result = await this.addWorkItem(
-        projectId,
-        userId,
-        item.name,
-        item.description,
-        parentId,
-        item.level,
-        i,
-        item.status || '未开始',
-        item.tags || '',
-        item.members || '',
-        item.progress_notes || '',
-        item.planned_start_time || '',
-        item.planned_end_time || '',
-        item.actual_start_time || '',
-        item.actual_end_time || '',
-        item.is_milestone || false,
-      );
-
-      // 递归保存子项
-      if (item.children && item.children.length > 0) {
-        await this.saveImportedItems(item.children, projectId, userId, result.id);
-      }
-    }
-  }
-
   // 清除缓存
   private invalidateCache(projectId: string): void {
     const cacheKey = String(projectId);
@@ -518,7 +365,6 @@ export class WorkBreakdownService {
         planned_end_time: item.planned_end_time || undefined,
         actual_start_time: item.actual_start_time || undefined,
         actual_end_time: item.actual_end_time || undefined,
-        is_milestone: item.is_milestone || false,
       };
     });
 
