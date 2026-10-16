@@ -3,10 +3,10 @@ import bcrypt from 'bcryptjs';
 import { getDb } from './database';
 import { signSession, verifySession } from './jwt';
 
-export const SESSION_COOKIE = 'daycraft_session';
-export const SESSION_MAX_AGE_SEC = 7 * 24 * 60 * 60;
+const SESSION_COOKIE = 'daycraft_session';
+const SESSION_MAX_AGE_SEC = 7 * 24 * 60 * 60;
 
-export function getSessionSecret(): string {
+function getSessionSecret(): string {
   const secret = process.env.AUTH_SECRET;
   if (!secret) {
     console.warn('[auth] 未设置 AUTH_SECRET 环境变量，使用内置开发密钥，请在生产环境务必配置');
@@ -15,7 +15,7 @@ export function getSessionSecret(): string {
   return secret;
 }
 
-export type CurrentUser = { id: string; email: string };
+type CurrentUser = { id: string; email: string };
 
 /** 兼容 express（req.cookies，需 cookie-parser）与最小鸭子类型。 */
 type CookieSource = { cookies?: Record<string, string> };
@@ -61,7 +61,7 @@ export async function getCurrentUser(req: CookieSource): Promise<CurrentUser | n
   return { id: row.id, email: row.email };
 }
 
-export type AuthResult = { ok: true; user: CurrentUser } | { ok: false; status: 401 | 403; error: string };
+type AuthResult = { ok: true; user: CurrentUser } | { ok: false; status: 401 | 403; error: string };
 
 /** 要求已登录，否则返回 ok:false（调用方直接 res.status().json()）。 */
 export async function requireUser(req: CookieSource): Promise<AuthResult> {
@@ -73,7 +73,7 @@ export async function requireUser(req: CookieSource): Promise<AuthResult> {
 }
 
 /** 查询用户是否为管理员（role JSON 数组包含 admin）。 */
-export function isAdmin(userId: string): boolean {
+function isAdmin(userId: string): boolean {
   const db = getDb();
   const row = db.prepare('SELECT role FROM user_profiles WHERE id = ?').get(userId) as
     | { role: string }

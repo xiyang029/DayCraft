@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshCw as RefreshCwIcon } from 'lucide-react';
 import { apiGet } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Spinner } from '@/components/ui/spinner';
 
 export type CaptchaValue = { token: string; code: string };
 

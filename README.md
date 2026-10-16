@@ -90,12 +90,15 @@ pnpm -r typecheck       # 双包类型检查
   - 登录/注册/重置密码均需 4 位数字字母验证码（页面直显，不区分大小写，一次性，5 分钟有效）
 - 项目：`/api/projects[/:id]`（GET/POST/PUT/DELETE）
 - 日报：`/api/daily-reports[/:id]`（按日期 upsert、删除）
-- 周报/月报/项目周报：`/api/weekly-reports`、`/api/monthly-reports`、`/api/project-weekly-reports[/:id]`
+- 周报/月报：`/api/weekly-reports`、`/api/monthly-reports`
 - 工作分解：`/api/work-breakdown/items[/:id]`（含批量位置）
 - 设置：`/api/ai-settings`（GET/PUT）
 - AI 代理（需登录，OpenAI 兼容）：`POST /api/ai`（润色，透传 `/chat/completions`）、`POST /api/ai/test`（连通性，调上游 `/models`）
   - key 由用户在设置页自填自管，服务端只转发不落库；Anthropic 原生接口不兼容，走代理会失败
 - 管理（admin）：`GET /api/admin/overview`、`PUT /api/admin/users/:id`（改角色，禁改自己）、`DELETE /api/admin/users/:id`（删号并级联清数据，禁删自己）
+- 团队报告（admin）：`GET /api/admin/reports/graph`（3D 星图：人员 / 项目 / 关联边，`start`+`end` 限定区间，默认近 30 天）
+  - `GET /api/admin/reports/daily`（全员日报明细，可按 `user_id` / `project_id` 过滤，`with_items=0` 可关明细）
+  - `GET /api/admin/reports/weekly`（全员周报 / 月报，`kind=weekly|monthly`）
 - 用户：`GET /api/users`（登录可见，仅 id/full_name/email，供参与人员等选择真实人员）
 
 ## 备份与恢复

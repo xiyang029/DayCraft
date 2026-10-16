@@ -12,8 +12,7 @@ import ProjectsPage from './pages/ProjectsPage';
 import WorkBreakdownPage from './pages/WorkBreakdownPage';
 import DailyReportsPage from './pages/DailyReportsPage';
 import ReportsPage from './pages/ReportsPage';
-import ProjectReportsPage from './pages/ProjectReportsPage';
-import NewProjectWeeklyReportPage from './pages/NewProjectWeeklyReportPage';
+import TeamReportsPage from './pages/TeamReportsPage';
 import SettingsPage from './pages/SettingsPage';
 import AdminPage from './pages/AdminPage';
 
@@ -59,8 +58,7 @@ export default function App() {
           <Route path="work-breakdown" element={<WorkBreakdownPage />} />
           <Route path="daily-reports" element={<DailyReportsPage />} />
           <Route path="reports" element={<ReportsPage />} />
-          <Route path="project-reports" element={<ProjectReportsPage />} />
-          <Route path="project-reports/new" element={<NewProjectWeeklyReportPage />} />
+          <Route path="team-reports" element={<TeamReportsPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="admin" element={<AdminPage />} />
         </Route>

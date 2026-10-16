@@ -48,7 +48,7 @@ export default function DashboardOverview() {
   // 使用持久化状态替代普通状态
   const [user, setUser] = usePersistentState<User | null>('dashboard-overview-user', null);
   const [reports, setReports] = usePersistentState<Report[]>('dashboard-overview-reports', []);
-  const [projects, setProjects] = usePersistentState<Project[]>('dashboard-overview-projects', []);
+  const [, setProjects] = usePersistentState<Project[]>('dashboard-overview-projects', []);
   const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = usePersistentState<Stats>('dashboard-overview-stats', {
     weeklyReportCount: 0,
@@ -84,7 +84,7 @@ export default function DashboardOverview() {
   }, [setProjects]);
 
   // 获取最近日报
-  const fetchRecentReports = useCallback(async (userId: string) => {
+  const fetchRecentReports = useCallback(async () => {
     try {
       const data = await apiGet<{ reports: any[] }>('/api/daily-reports?with_items=1');
 
@@ -108,7 +108,7 @@ export default function DashboardOverview() {
   }, [setReports]);
 
   // 获取统计数据
-  const fetchStats = useCallback(async (userId: string) => {
+  const fetchStats = useCallback(async () => {
     try {
       // 获取本周日报数量
       const today = new Date();
@@ -165,7 +165,7 @@ export default function DashboardOverview() {
   }, [setStats]);
 
   // 获取所有数据
-  const fetchData = useCallback(async (userId: string) => {
+  const fetchData = useCallback(async () => {
     if (dataLoadedRef.current) {
       console.log('数据已加载，跳过重新获取');
       setIsLoading(false);
@@ -177,8 +177,8 @@ export default function DashboardOverview() {
       // 并行请求数据
       await Promise.all([
         fetchProjects(),
-        fetchRecentReports(userId),
-        fetchStats(userId)
+        fetchRecentReports(),
+        fetchStats()
       ]);
       
       // 标记数据已加载
@@ -206,7 +206,7 @@ export default function DashboardOverview() {
       
       // 如果数据未加载或超过刷新间隔，则加载数据
       if (!dataLoadedRef.current || timeSinceLastLoad > DATA_REFRESH_INTERVAL) {
-        fetchData(authUser.id);
+        fetchData();
         lastLoadTimeRef.current = now;
       } else {
         // 如果数据已加载且未超过刷新间隔，则直接设置加载状态为false
@@ -225,7 +225,7 @@ export default function DashboardOverview() {
           if (authUser && (!user || reports.length === 0)) {
             console.log('数据不存在，重新加载');
             dataLoadedRef.current = false;
-            fetchData(authUser.id);
+            fetchData();
           }
         }
       };
@@ -365,6 +365,7 @@ export default function DashboardOverview() {
             <Button
               variant="link"
               size="sm"
+              nativeButton={false}
               render={<Link to="/dashboard/daily-reports" />}
             >
               查看全部
@@ -471,6 +472,7 @@ export default function DashboardOverview() {
               <Button
                 variant="outline"
                 size="sm"
+                nativeButton={false}
                 render={<Link to={`/dashboard/daily-reports?edit=${previewReport.date}`} onClick={(e) => e.stopPropagation()} />}
               >
                 <PencilIcon data-icon="inline-start" />

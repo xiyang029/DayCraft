@@ -39,20 +39,6 @@ function loadPageState<T>(key: string): T | null {
 }
 
 /**
- * 删除保存的页面状态
- * @param key 存储键名
- */
-export function clearPageState(key: string): void {
-  if (typeof window !== 'undefined') {
-    try {
-      sessionStorage.removeItem(`page_state_${key}`);
-    } catch (error) {
-      console.error('清除页面状态失败:', error);
-    }
-  }
-}
-
-/**
  * React Hook，用于管理页面状态的持久化
  * @param key 唯一标识符
  * @param initialState 初始状态

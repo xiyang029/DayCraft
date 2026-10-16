@@ -7,12 +7,13 @@ import cookieParser from 'cookie-parser';
 import { getDb, getDbPath } from './lib/database';
 import authRouter from './routes/auth';
 import adminRouter from './routes/admin';
+import adminReportsRouter from './routes/admin-reports';
 import usersRouter from './routes/users';
 import { aiSettingsRouter } from './routes/settings';
 import { aiRouter } from './routes/ai';
 import projectsRouter from './routes/projects';
 import { dailyReportsRouter } from './routes/daily';
-import { weeklyRouter, monthlyRouter, projectWeeklyRouter } from './routes/weekly';
+import { weeklyRouter, monthlyRouter } from './routes/weekly';
 import { itemsRouter } from './routes/workbreakdown';
 
 // 仓库根目录（src 和 dist 均为两级：server/src→server→root，server/dist→server→root）
@@ -31,6 +32,7 @@ app.use(cookieParser());
 
 app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/admin/reports', adminReportsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/ai-settings', aiSettingsRouter);
 app.use('/api/ai', aiRouter);
@@ -38,7 +40,6 @@ app.use('/api/projects', projectsRouter);
 app.use('/api/daily-reports', dailyReportsRouter);
 app.use('/api/weekly-reports', weeklyRouter);
 app.use('/api/monthly-reports', monthlyRouter);
-app.use('/api/project-weekly-reports', projectWeeklyRouter);
 app.use('/api/work-breakdown/items', itemsRouter);
 
 // 未匹配的 /api 返回 JSON 404（避免落入 SPA fallback）
@@ -50,7 +51,7 @@ app.use('/api', (_req, res) => {
 const distDir = path.join(ROOT, 'client', 'dist');
 if (fs.existsSync(path.join(distDir, 'index.html'))) {
   app.use(express.static(distDir));
-  app.get('*', (req, res) => {
+  app.get('*', (_req, res) => {
     res.sendFile(path.join(distDir, 'index.html'));
   });
   console.log(`[server] 托管前端静态目录: ${distDir}`);

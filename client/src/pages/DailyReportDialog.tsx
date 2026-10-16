@@ -460,13 +460,14 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
                         <FieldError errors={[]} />
                       </Field>
                       <Tooltip>
-                        <TooltipTrigger render={<button type="button"
+                        <TooltipTrigger
+                          type="button"
                           onClick={() => removeWorkItem(item.globalIndex)}
                           aria-label="删除工作项"
                           className={cn(buttonVariants({ variant: "ghost", size: "icon" }))}
                         >
                           <TrashIcon data-icon="inline-start" />
-                        </button>} />
+                        </TooltipTrigger>
                         <TooltipContent>删除工作项</TooltipContent>
                       </Tooltip>
                     </div>

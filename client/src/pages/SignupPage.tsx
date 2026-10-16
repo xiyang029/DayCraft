@@ -114,7 +114,7 @@ export default function SignupPage() {
                 <AlertDescription>{successMessage}</AlertDescription>
               </Alert>
               <div className="text-center">
-                <Button variant="link" render={<Link to="/login" />}>
+                <Button variant="link" nativeButton={false} render={<Link to="/login" />}>
                   返回登录页面
                 </Button>
               </div>
@@ -203,7 +203,7 @@ export default function SignupPage() {
           {!successMessage && (
             <div className="text-center">
               <p className="text-sm text-muted-foreground">
-                已有账号? <Button variant="link" size="sm" render={<Link to="/login" />}>登录</Button>
+                已有账号? <Button variant="link" size="sm" nativeButton={false} render={<Link to="/login" />}>登录</Button>
               </p>
             </div>
           )}

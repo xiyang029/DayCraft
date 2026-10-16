@@ -10,6 +10,7 @@ import {
   FolderIcon,
   Settings2Icon,
   ShieldCheckIcon,
+  Radar as RadarIcon,
   XIcon,
   ChevronLeftIcon,
   ChevronRightIcon
@@ -35,9 +36,10 @@ interface UserProfile {
 const getNavigation = (role: string[] = []) => {
   const isAdmin = role.includes('admin');
   const isUser = role.includes('user');
-  // 仅 admin 且不是双重角色时，只显示系统管理菜单
+  // 仅 admin 且不是双重角色时，只显示管理员菜单
   if (isAdmin && !isUser && role.length === 1) {
     return [
+      { name: "团队报告", href: "/dashboard/team-reports", icon: RadarIcon, subItems: undefined },
       { name: "系统管理", href: "/dashboard/admin", icon: ShieldCheckIcon, subItems: undefined }
     ];
   }
@@ -60,8 +62,7 @@ const getNavigation = (role: string[] = []) => {
         icon: FileTextIcon,
         subItems: [
           { name: "日报", href: "/dashboard/daily-reports" },
-          { name: "周报/月报", href: "/dashboard/reports" },
-          { name: "项目周报", href: "/dashboard/project-reports" }
+          { name: "周报/月报", href: "/dashboard/reports" }
         ]
       },
       { name: "设置", href: "/dashboard/settings", icon: Settings2Icon },
@@ -87,7 +88,7 @@ const getNavigation = (role: string[] = []) => {
         subItems: [
           { name: "日报", href: "/dashboard/daily-reports" },
           { name: "周报/月报", href: "/dashboard/reports" },
-          { name: "项目周报", href: "/dashboard/project-reports" }
+          { name: "团队报告", href: "/dashboard/team-reports" }
         ]
       },
       { name: "设置", href: "/dashboard/settings", icon: Settings2Icon },
@@ -118,6 +119,16 @@ export default function DashboardLayout() {
     if (savedExpanded !== null) {
       setSidebarExpanded(savedExpanded === "true");
     }
+  }, []);
+
+  // 仪表盘是全屏固定布局：锁住 body 滚动，避免出现「窗口滚动条 + 内容滚动条」双滚动条
+  // （100vh 不扣除横向滚动条，边界情况下文档会溢出视口，底部还会露出一条空白）
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
   }, []);
 
   // 根据屏幕大小设置侧边栏默认状态
@@ -229,6 +240,12 @@ export default function DashboardLayout() {
   // 在组件内，动态获取导航项
   const navigation = getNavigation(userProfile?.role);
 
+  // 页头标题：优先匹配一级菜单，其次匹配二级菜单（如 /dashboard/team-reports -> 报告）
+  const activeNavName =
+    navigation.find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))?.name ??
+    navigation.find((item) => item.subItems?.some((sub) => sub.href === pathname))?.name ??
+    '仪表盘';
+
   // 处理加载状态
   if (isLoading || authLoading) {
     return (
@@ -242,7 +259,7 @@ export default function DashboardLayout() {
   }
 
   return (
-    <div className="flex h-screen bg-muted">
+    <div className="flex h-dvh overflow-hidden bg-muted">
       {/* 移动端侧边栏切换按钮 - 固定在右下角 */}
       <Button
         onClick={toggleSidebar}
@@ -310,6 +327,7 @@ export default function DashboardLayout() {
                       >
                         <Button
                           variant="ghost"
+                          nativeButton={false}
                           title={!sidebarExpanded ? item.name : ""}
                           className={cn(
                             "w-full",
@@ -350,6 +368,7 @@ export default function DashboardLayout() {
                           <li key={subItem.href}>
                             <Button
                               variant="ghost"
+                              nativeButton={false}
                               className={cn(
                                 "w-full justify-start",
                                 pathname === subItem.href
@@ -418,7 +437,7 @@ export default function DashboardLayout() {
       </div>
 
       {/* 主内容区域 */}
-      <div className="flex w-full flex-1 flex-col overflow-hidden">
+      <div className="flex w-full min-w-0 flex-1 flex-col overflow-hidden">
         {/* 顶部导航栏 */}
         <header className="border-b border-border bg-card">
           <div className="flex items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
@@ -434,7 +453,7 @@ export default function DashboardLayout() {
                 <MenuIcon />
               </Button>
               <h1 className="truncate text-lg font-medium text-foreground">
-                {navigation.find((item) => pathname.startsWith(item.href))?.name || "仪表盘"}
+                {activeNavName}
               </h1>
             </div>
             <div className="flex items-center gap-2">
@@ -473,7 +492,7 @@ export default function DashboardLayout() {
         </header>
 
         {/* 页面内容 - 调整内边距以适应移动端 */}
-        <main className="flex-1 overflow-auto bg-muted p-3 sm:p-4 md:p-6 lg:p-8">
+        <main className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-muted p-3 sm:p-4 md:p-6 lg:p-8">
           <Outlet />
         </main>
       </div>

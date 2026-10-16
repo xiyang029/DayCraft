@@ -128,35 +128,6 @@ CREATE TABLE IF NOT EXISTS user_ai_settings (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS project_weekly_reports (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  year INTEGER NOT NULL,
-  week_number INTEGER NOT NULL,
-  start_date TEXT NOT NULL,
-  end_date TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  UNIQUE (user_id, year, week_number)
-);
-CREATE INDEX IF NOT EXISTS project_weekly_reports_user_id_idx ON project_weekly_reports(user_id);
-
-CREATE TABLE IF NOT EXISTS project_weekly_report_items (
-  id TEXT PRIMARY KEY,
-  report_id TEXT NOT NULL REFERENCES project_weekly_reports(id) ON DELETE CASCADE,
-  project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
-  work_item_id TEXT REFERENCES work_breakdown_items(id) ON DELETE SET NULL,
-  content TEXT NOT NULL,
-  project_name TEXT,
-  project_code TEXT,
-  work_item_name TEXT,
-  work_item_path TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS project_weekly_report_items_report_id_idx ON project_weekly_report_items(report_id);
-CREATE INDEX IF NOT EXISTS project_weekly_report_items_project_id_idx ON project_weekly_report_items(project_id);
-
 -- 验证码（SQLite 持久化：Next 各路由可能独立打包，内存 Map 无法跨路由共享）
 CREATE TABLE IF NOT EXISTS captchas (
   token TEXT PRIMARY KEY,

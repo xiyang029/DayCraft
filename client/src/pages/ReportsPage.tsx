@@ -15,12 +15,12 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { Card, CardHeader, CardTitle, CardAction, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
-import { Empty, EmptyHeader, EmptyTitle, EmptyMedia } from "@/components/ui/empty";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 
 
 interface DailyReportData {
@@ -328,24 +328,26 @@ const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ label, prevLabel, nextLabel, 
   return (
     <div className="flex items-center gap-1 text-xs text-muted-foreground md:text-sm">
       <Tooltip>
-<TooltipTrigger render={<button type="button"
+<TooltipTrigger
+        type="button"
         onClick={onPrev}
         className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }))}
         aria-label={prevLabel}
       >
         <ChevronLeftIcon />
-      </button>} />
+      </TooltipTrigger>
 <TooltipContent>{prevLabel}</TooltipContent>
 </Tooltip>
       <span className="font-medium whitespace-nowrap text-foreground">{label}</span>
       <Tooltip>
-<TooltipTrigger render={<button type="button"
+<TooltipTrigger
+        type="button"
         onClick={onNext}
         className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }))}
         aria-label={nextLabel}
       >
         <ChevronRightIcon />
-      </button>} />
+      </TooltipTrigger>
 <TooltipContent>{nextLabel}</TooltipContent>
 </Tooltip>
     </div>
@@ -421,7 +423,7 @@ export default function ReportsPage() {
       }));
       
       // 只有当数据需要转换时才更新
-      if (processedWeeklyData.some((week, index) => 
+      if (processedWeeklyData.some((_week, index) => 
         !(weeklyData[index].startDate instanceof Date) || 
         !(weeklyData[index].endDate instanceof Date))) {
         setWeeklyData(processedWeeklyData);
@@ -436,7 +438,7 @@ export default function ReportsPage() {
       }));
       
       // 只有当数据需要转换时才更新
-      if (processedMonthlyData.some((month, index) => 
+      if (processedMonthlyData.some((_month, index) => 
         !(monthlyData[index].startDate instanceof Date) || 
         !(monthlyData[index].endDate instanceof Date))) {
         setMonthlyData(processedMonthlyData);
@@ -1146,24 +1148,26 @@ export default function ReportsPage() {
             ) : (
               <div className="flex items-center text-xs md:text-sm text-gray-500 mb-2 md:mb-4">
                 <Tooltip>
-<TooltipTrigger render={<button type="button"
+<TooltipTrigger
+                  type="button"
                   onClick={() => handleYearChange(currentYear - 1)}
                   className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "mr-1 md:mr-2 p-1 rounded-full hover:bg-gray-100")}
                   aria-label="上一年"
                 >
                   <ChevronLeftIcon data-icon="inline-start" />
-                </button>} />
+                </TooltipTrigger>
 <TooltipContent>上一年</TooltipContent>
 </Tooltip>
                 <span className="font-medium text-gray-700">{currentYear}年</span>
                 <Tooltip>
-<TooltipTrigger render={<button type="button"
+<TooltipTrigger
+                  type="button"
                   onClick={() => handleYearChange(currentYear + 1)}
                   className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "ml-1 md:ml-2 p-1 rounded-full hover:bg-gray-100")}
                   aria-label="下一年"
                 >
                   <ChevronRightIcon data-icon="inline-start" />
-                </button>} />
+                </TooltipTrigger>
 <TooltipContent>下一年</TooltipContent>
 </Tooltip>
               </div>

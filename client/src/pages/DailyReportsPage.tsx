@@ -84,26 +84,28 @@ const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   return (
     <div className="flex items-center gap-1 text-xs text-muted-foreground md:gap-2 md:text-sm">
       <Tooltip>
-<TooltipTrigger render={<button type="button"
+<TooltipTrigger
+        type="button"
         onClick={() => onWeekChange(currentWeekIndex + 1)}
         disabled={currentWeekIndex >= maxWeekIndex}
         className={cn(buttonVariants({ variant: "ghost", size: "icon" }))}
         aria-label="上一周"
       >
         <ChevronLeftIcon data-icon="inline-start" />
-      </button>} />
+      </TooltipTrigger>
 <TooltipContent>上一周</TooltipContent>
 </Tooltip>
       <span className="font-medium whitespace-nowrap text-foreground">{year}年{month}月<span className="hidden md:inline"> (第{weekNumber}周)</span></span>
       <Tooltip>
-<TooltipTrigger render={<button type="button"
+<TooltipTrigger
+        type="button"
         onClick={() => onWeekChange(currentWeekIndex - 1)}
         disabled={currentWeekIndex <= 0}
         className={cn(buttonVariants({ variant: "ghost", size: "icon" }))}
         aria-label="下一周"
       >
         <ChevronRightIcon data-icon="inline-start" />
-      </button>} />
+      </TooltipTrigger>
 <TooltipContent>下一周</TooltipContent>
 </Tooltip>
     </div>
@@ -866,48 +868,6 @@ export default function DailyReportsPage() {
         )}
         </CardContent>
       </Card>
-
-      {/* 周切换分页控件 */}
-      {weekData.length > 0 && (
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 md:gap-4">
-          <div className="text-xs md:text-sm text-foreground text-center sm:text-left w-full sm:w-auto">
-            {currentWeekData && (
-              <>
-                显示 <span className="font-medium">{currentWeekData.year}年第{currentWeekData.weekNumber}周</span> 的日报
-              </>
-            )}
-          </div>
-          <div className="flex items-center gap-1 md:gap-2">
-            <Tooltip>
-              <TooltipTrigger render={<button type="button"
-              onClick={() => handleWeekChange(currentWeekIndex + 1)}
-              disabled={currentWeekIndex >= weekData.length - 1}
-              aria-label="上一周"
-              className={cn(buttonVariants({ variant: "ghost", size: "icon" }))}
-            >
-              <span className="sr-only">上一周</span>
-              <ChevronLeftIcon data-icon="inline-start" />
-            </button>} />
-              <TooltipContent>上一周</TooltipContent>
-            </Tooltip>
-            <Badge variant="secondary" className="px-3 py-1.5 text-xs md:px-4 md:py-2 md:text-sm">
-              {currentWeekIndex + 1} / {weekData.length}
-            </Badge>
-            <Tooltip>
-              <TooltipTrigger render={<button type="button"
-              onClick={() => handleWeekChange(currentWeekIndex - 1)}
-              disabled={currentWeekIndex <= 0}
-              aria-label="下一周"
-              className={cn(buttonVariants({ variant: "ghost", size: "icon" }))}
-            >
-              <span className="sr-only">下一周</span>
-              <ChevronRightIcon data-icon="inline-start" />
-            </button>} />
-              <TooltipContent>下一周</TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
-      )}
 
       {/* 日报预览弹窗 */}
       <Dialog open={isPreviewOpen} onOpenChange={(open) => { if (!open) closePreview(); }}>

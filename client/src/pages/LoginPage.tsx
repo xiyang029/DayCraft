@@ -119,7 +119,7 @@ export default function LoginPage() {
             <Field>
               <div className="flex items-center justify-between">
                 <FieldLabel htmlFor="password">密码</FieldLabel>
-                <Button variant="link" size="sm" render={<Link to="/forgot-password" />}>
+                <Button variant="link" size="sm" nativeButton={false} render={<Link to="/forgot-password" />}>
                   忘记密码?
                 </Button>
               </div>
@@ -159,6 +159,7 @@ export default function LoginPage() {
           <Button
             variant="outline"
             className="w-full"
+            nativeButton={false}
             render={<Link to="/signup" />}
           >
             注册新账号

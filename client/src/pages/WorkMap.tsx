@@ -291,12 +291,12 @@ const WorkMap = ({ workItems, projectName }: WorkMapProps) => {
     };
 
     // 第一阶段：创建所有节点
-    const { nodes: nodeMap, heights: heightMap, spaces: spaceMap } = createNodes(workItems, 1, 30 + X_GAP);
+    const { nodes: nodeMap, heights: heightMap, spaces: spaceMap } = createNodes(items, 1, 30 + X_GAP);
 
     // 第二阶段：设置Y坐标并创建边
-    if (workItems.length > 0) {
+    if (items.length > 0) {
       const totalHeight = positionNodesAndCreateEdges(
-        workItems,
+        items,
         rootId,
         1,
         30 + X_GAP,
@@ -331,7 +331,7 @@ const WorkMap = ({ workItems, projectName }: WorkMapProps) => {
   }, [workItems, projectName, convertWorkItemsToGraph]);
 
   // 处理节点点击
-  const onNodeClick: NodeMouseHandler = useCallback((event, node) => {
+  const onNodeClick: NodeMouseHandler = useCallback((_event, node) => {
     // 获取原始工作项数据
     const originalItem = node.data.originalItem;
     if (originalItem) {

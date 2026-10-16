@@ -1348,7 +1348,14 @@ export default function WorkBreakdownPage() {
 
                   {/* 3D 世界视图（SPA 内联，占满视口剩余高度） */}
                   {viewMode === '3d' ? (
-                    <Suspense fallback={<div className="text-sm text-gray-500">3D 世界加载中...</div>}>
+                    <Suspense
+                      fallback={(
+                        <div className="flex h-[calc(100dvh-300px)] min-h-120 w-full items-center justify-center rounded-lg bg-[#050a18] sm:h-[calc(100dvh-250px)] lg:h-[calc(100dvh-225px)]">
+                          <Spinner className="size-8 text-sky-400" />
+                          <span className="ml-3 text-sm text-sky-200/80">正在构建 3D 世界…</span>
+                        </div>
+                      )}
+                    >
                       <WorkBreakdown3DWorld
                         key={selectedProject.id}
                         workItems={selectedStatuses.length > 0 ? filteredWorkItems : workItems}

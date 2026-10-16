@@ -32,6 +32,9 @@ export function getDb(): DatabaseSync {
   db.exec('DROP TABLE IF EXISTS work_breakdown_shares;');
   // 历史迁移：待办管理已下线，删除待办表（新库无此表，DROP 幂等无害）
   db.exec('DROP TABLE IF EXISTS project_todos;');
+  // 历史迁移：项目周报已下线，删除项目周报表（先删子表再删主表；新库无此表，DROP 幂等无害）
+  db.exec('DROP TABLE IF EXISTS project_weekly_report_items;');
+  db.exec('DROP TABLE IF EXISTS project_weekly_reports;');
   // 历史迁移：已下线字段，删除遗留列（新库无此列，老库幂等清理）
   // 历史迁移：系统内置 AI 已下线，只保留用户自定义，删除 settings_type 列
   const dropColumns: Array<[string, string]> = [
@@ -43,9 +46,8 @@ export function getDb(): DatabaseSync {
     // 历史迁移：头像/上次登录时间已下线
     ['user_profiles', 'avatar_url'],
     ['user_profiles', 'last_sign_in_at'],
-    // 历史迁移：工作计划字段已下线（日报/项目周报不再区分计划）
+    // 历史迁移：工作计划字段已下线（日报不再区分计划）
     ['daily_reports', 'is_plan'],
-    ['project_weekly_reports', 'is_plan'],
     // 历史迁移：里程碑字段已下线
     ['work_breakdown_items', 'is_milestone'],
   ];

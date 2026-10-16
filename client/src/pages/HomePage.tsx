@@ -15,10 +15,10 @@ export default function HomePage() {
           <div className="flex h-16 items-center justify-between">
             <span className="text-xl font-bold text-primary">DayCraft</span>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" render={<Link to="/login" />}>
+              <Button variant="ghost" nativeButton={false} render={<Link to="/login" />}>
                 登录
               </Button>
-              <Button render={<Link to="/signup" />}>
+              <Button nativeButton={false} render={<Link to="/signup" />}>
                 免费注册
               </Button>
             </div>
@@ -40,10 +40,10 @@ export default function HomePage() {
                 通过结构化的工作分解和智能化的报告生成，让工作更有条理，汇报更加专业。
               </p>
               <div className="mt-6 flex flex-wrap gap-4">
-                <Button size="lg" render={<Link to="/signup" />}>
+                <Button size="lg" nativeButton={false} render={<Link to="/signup" />}>
                   立即开始
                 </Button>
-                <Button size="lg" variant="outline" render={<Link to="/login" />}>
+                <Button size="lg" variant="outline" nativeButton={false} render={<Link to="/login" />}>
                   登录账号
                 </Button>
               </div>

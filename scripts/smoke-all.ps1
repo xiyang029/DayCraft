@@ -419,6 +419,64 @@ Assert-Api -Name 'GET /api/daily-reports 同日期未重复插入' -Method GET -
     return $null
   } | Out-Null
 
+Write-Section 'G. 管理员团队报告（全员视图）'
+
+Assert-Api -Name 'GET /api/admin/reports/graph 非管理员 -> 403' -Method GET -Path '/api/admin/reports/graph' -Session $userSess `
+  -Expect @(403) -Contains '需要管理员权限' | Out-Null
+
+Assert-Api -Name 'GET /api/admin/reports/daily 非管理员 -> 403' -Method GET -Path '/api/admin/reports/daily' -Session $userSess `
+  -Expect @(403) -Contains '需要管理员权限' | Out-Null
+
+Assert-Api -Name 'GET /api/admin/reports/graph 管理员 -> 200' -Method GET `
+  -Path "/api/admin/reports/graph?start=$today&end=$today" -Session $adminSess -Expect @(200) -Verify {
+    param($j)
+    if ($null -eq $j.members -or $null -eq $j.projects -or $null -eq $j.links) { return '缺少 members/projects/links' }
+    if ($j.totals.members -lt 2) { return "成员数应 >= 2，实得 $($j.totals.members)" }
+    $self = $j.members | Where-Object { $_.id -eq $adminId }
+    if ($null -eq $self) { return '成员列表缺少管理员本人' }
+    if ([int]$self.daily_count -lt 1) { return "管理员当日日报数应 >= 1，实得 $($self.daily_count)" }
+    if ($j.totals.items -lt 1) { return "totals.items 应 >= 1，实得 $($j.totals.items)" }
+    $linked = $j.links | Where-Object { $_.project_id -eq $projectId }
+    if ($null -eq $linked) { return '星图缺少管理员-项目关联边' }
+    return $null
+  } | Out-Null
+
+Assert-Api -Name 'GET /api/admin/reports/daily 全员日报含明细' -Method GET `
+  -Path "/api/admin/reports/daily?start=$today&end=$today" -Session $adminSess -Expect @(200) -Verify {
+    param($j)
+    if ($j.total -lt 1) { return "应命中日报，实得 $($j.total)" }
+    $first = $j.reports[0]
+    if (-not $first.user_name) { return '日报缺少 user_name' }
+    if ($null -eq $first.items -or $first.items.Count -lt 1) { return '日报缺少 items 明细' }
+    return $null
+  } | Out-Null
+
+Assert-Api -Name 'GET /api/admin/reports/daily?project_id= 按项目过滤' -Method GET `
+  -Path "/api/admin/reports/daily?start=$today&end=$today&project_id=$projectId" -Session $adminSess -Expect @(200) -Verify {
+    param($j)
+    if ($j.total -lt 1) { return "该项目应命中日报，实得 $($j.total)" }
+    foreach ($r in $j.reports) {
+      $hit = @($r.items | Where-Object { $_.project_id -eq $projectId })
+      if ($hit.Count -lt 1) { return '返回了不含该项目的日报' }
+    }
+    return $null
+  } | Out-Null
+
+Assert-Api -Name 'GET /api/admin/reports/weekly kind=weekly -> 200' -Method GET `
+  -Path "/api/admin/reports/weekly?kind=weekly&start=$today&end=$today" -Session $adminSess -Expect @(200) -Verify {
+    param($j)
+    if ($j.kind -ne 'weekly') { return "kind 应为 weekly，实得 $($j.kind)" }
+    if ($null -eq $j.reports) { return '缺少 reports' }
+    return $null
+  } | Out-Null
+
+Assert-Api -Name 'GET /api/admin/reports/weekly kind=monthly -> 200' -Method GET `
+  -Path "/api/admin/reports/weekly?kind=monthly&start=$today&end=$today" -Session $adminSess -Expect @(200) -Verify {
+    param($j)
+    if ($j.kind -ne 'monthly') { return "kind 应为 monthly，实得 $($j.kind)" }
+    return $null
+  } | Out-Null
+
 Assert-Api -Name 'DELETE /api/daily-reports/:id -> 200' -Method DELETE -Path "/api/daily-reports/$dailyId" -Session $adminSess `
   -Expect @(200) -Contains '日报删除成功' | Out-Null
 
@@ -482,47 +540,6 @@ Assert-Api -Name 'POST /api/monthly-reports 同月 upsert -> 200' -Method POST -
 
 Assert-Api -Name 'GET /api/monthly-reports 月报已落库' -Method GET -Path '/api/monthly-reports' -Session $adminSess `
   -Expect @(200) -Contains '本月冒烟（改）' | Out-Null
-
-# ============================================================
-Write-Section 'J. 项目周报'
-
-Assert-Api -Name 'GET /api/project-weekly-reports -> 200' -Method GET -Path '/api/project-weekly-reports' -Session $adminSess `
-  -Expect @(200) | Out-Null
-
-Assert-Api -Name 'POST /api/project-weekly-reports 缺关键字段 -> 400' -Method POST -Path '/api/project-weekly-reports' -Session $adminSess `
-  -Body @{ year = 2026 } -Expect @(400) -Contains '缺少项目周报关键字段' | Out-Null
-
-Assert-Api -Name 'POST /api/project-weekly-reports 借用他人项目 -> 403' -Method POST -Path '/api/project-weekly-reports' -Session $userSess `
-  -Body @{ year = 2026; week_number = 41; start_date = '2026-10-05'; end_date = '2026-10-11'; items = @(@{ project_id = $projectId; content = '偷用' }) } `
-  -Expect @(403) -Contains '包含不属于你的项目' | Out-Null
-
-$pw = Assert-Api -Name 'POST /api/project-weekly-reports 新建 -> 201' -Method POST -Path '/api/project-weekly-reports' -Session $adminSess `
-  -Body @{
-    year = 2026; week_number = 41; start_date = '2026-10-05'; end_date = '2026-10-11'
-    items = @(@{ project_id = $projectId; content = '项目周报条目'; project_name = "冒烟项目$stamp"; project_code = "SMK$stamp" })
-  } -Expect @(201) -Contains '项目周报保存成功'
-$pwId = [string]$pw.report.id
-
-Assert-Api -Name 'GET /api/project-weekly-reports?year=&week_number= 精确查询' -Method GET -Path '/api/project-weekly-reports?year=2026&week_number=41' -Session $adminSess `
-  -Expect @(200) -Verify {
-    param($j)
-    if ($null -eq $j.report) { return '未找到项目周报' }
-    if ($j.report.items.Count -ne 1) { return "明细条数应为 1，实得 $($j.report.items.Count)" }
-    if ($j.report.items[0].projects.name -ne "冒烟项目$stamp") { return '明细未关联项目' }
-    return $null
-  } | Out-Null
-
-Assert-Api -Name 'GET /api/project-weekly-reports?with_items=1 列表带明细' -Method GET -Path '/api/project-weekly-reports?with_items=1' -Session $adminSess `
-  -Expect @(200) | Out-Null
-
-Assert-Api -Name 'GET /api/project-weekly-reports 未命中周次返回 null' -Method GET -Path '/api/project-weekly-reports?year=1999&week_number=1' -Session $adminSess `
-  -Expect @(200) -Verify { param($j) if ($null -ne $j.report) { return '未命中的周次应返回 report:null' } return $null } | Out-Null
-
-Assert-Api -Name 'DELETE /api/project-weekly-reports/:id -> 200' -Method DELETE -Path "/api/project-weekly-reports/$pwId" -Session $adminSess `
-  -Expect @(200) -Contains '项目周报删除成功' | Out-Null
-
-Assert-Api -Name 'DELETE /api/project-weekly-reports/:id 不存在 -> 404' -Method DELETE -Path "/api/project-weekly-reports/$pwId" -Session $adminSess `
-  -Expect @(404) -Contains '项目周报不存在' | Out-Null
 
 # ============================================================
 Write-Section 'K. 工作分解'

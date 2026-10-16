@@ -83,7 +83,7 @@ export default function ForgotPasswordPage() {
                 <AlertDescription>{successMessage}</AlertDescription>
               </Alert>
               <div className="text-center">
-                <Button variant="link" render={<Link to="/login" />}>
+                <Button variant="link" nativeButton={false} render={<Link to="/login" />}>
                   返回登录页面
                 </Button>
               </div>
@@ -153,7 +153,7 @@ export default function ForgotPasswordPage() {
               </Button>
 
               <div className="text-center text-sm">
-                <Button variant="link" size="sm" render={<Link to="/login" />}>
+                <Button variant="link" size="sm" nativeButton={false} render={<Link to="/login" />}>
                   返回登录页面
                 </Button>
               </div>
