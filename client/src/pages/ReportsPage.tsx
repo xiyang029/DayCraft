@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { DownloadIcon, FileTextIcon, RefreshCwIcon, CheckCircleIcon, XCircleIcon, AlertCircleIcon, EyeIcon, CopyIcon, XIcon, PencilIcon, SparklesIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { FileTextIcon, RefreshCwIcon, CheckCircleIcon, XCircleIcon, AlertCircleIcon, EyeIcon, CopyIcon, XIcon, PencilIcon, SparklesIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { useAuth } from "../contexts/auth-context";
 import { apiGet, apiPost } from "../lib/api";
 import type { UserAISettings } from "../lib/db/types";
@@ -123,17 +123,6 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({ title, content, onClose, 
     }
   };
   
-  const handleDownload = () => {
-    const element = document.createElement('a');
-    const file = new Blob([editedContent], {type: 'text/plain'});
-    element.href = URL.createObjectURL(file);
-    element.download = `${title.replace(/\s+/g, '_')}.txt`;
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
-    toast.add({ title: '报告已下载', type: 'success' });
-  };
-
   const handleEdit = () => {
     setIsEditing(true);
   };
@@ -257,12 +246,6 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({ title, content, onClose, 
           >
             <CopyIcon data-icon="inline-start" />
             复制
-          </Button>
-          <Button variant="outline" size="sm"
-            onClick={handleDownload}
-          >
-            <DownloadIcon data-icon="inline-start" />
-            下载
           </Button>
           
           {isAIEnabled && (
@@ -1118,10 +1101,6 @@ export default function ReportsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-xl md:text-2xl font-bold">周报月报</h1>
-      </div>
-
       {/* 切换标签 */}
       <Tabs value={activeTab} onValueChange={(value) => { if (value === "weekly" || value === "monthly") setActiveTab(value); }}>
         <TabsList variant="line">
@@ -1177,9 +1156,8 @@ export default function ReportsPage() {
         
         <CardContent>
         {isLoading ? (
-          <div className="flex items-center justify-center gap-2 p-6 md:p-12">
+          <div className="flex items-center justify-center p-6 md:p-12">
             <Skeleton className="h-8 w-8 rounded-full" />
-            <span className="text-sm md:text-base text-gray-500">加载中...</span>
           </div>
         ) : (
           <div>

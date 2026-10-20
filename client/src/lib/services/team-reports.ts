@@ -20,7 +20,6 @@ export interface TeamProjectNode {
   name: string;
   code: string;
   is_active: boolean;
-  owner_id: string;
   owner_name: string;
   item_count: number;
   member_count: number;
@@ -35,7 +34,6 @@ export interface TeamLink {
 }
 
 export interface TeamGraph {
-  range: { start: string; end: string };
   members: TeamMemberNode[];
   projects: TeamProjectNode[];
   links: TeamLink[];
@@ -44,27 +42,20 @@ export interface TeamGraph {
 
 export interface TeamReportItem {
   id: string;
-  report_id: string;
   project_id: string | null;
   content: string;
-  created_at: string;
   projects: { id: string; name: string | null; code: string | null } | null;
 }
 
 export interface TeamDailyReport {
   id: string;
-  user_id: string;
   user_name: string;
-  user_email: string;
   date: string;
-  created_at: string;
-  updated_at: string;
   items: TeamReportItem[];
 }
 
 export interface TeamWeeklyReport {
   id: string;
-  user_id: string;
   user_name: string;
   year: number;
   week_number?: number;
@@ -73,7 +64,6 @@ export interface TeamWeeklyReport {
   end_date: string;
   content?: string;
   status?: string;
-  updated_at: string;
   items?: TeamReportItem[];
 }
 

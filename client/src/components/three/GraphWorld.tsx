@@ -82,6 +82,12 @@ export interface GraphWorldVisuals {
   bloomRadius?: number;
   bloomThreshold?: number;
   edgeSegments?: number;
+  /** 连线材质透明度（默认 0.52；连接密集的场景可调低）。 */
+  edgeOpacity?: number;
+  /** 无悬浮/选中时连线的目标亮度（默认 1；压暗模式下可调低）。 */
+  edgeIdleBrightness?: number;
+  /** 沿连线流动的数据光点透明度（默认 0.85）。 */
+  flowOpacity?: number;
   maxSparks?: number;
   introDuration?: number;
   glowFactor?: number;
@@ -104,19 +110,16 @@ export interface GraphWorldProps {
   onHoverKeyChange: (key: string | null) => void;
   /** 哪些节点可被选中（团队核心点击视为取消，工作分解全部可选）。 */
   isPickableKey?: (key: string) => boolean;
-  /** 是否压暗无关节点/边（团队星图开，工作分解关）。 */
+  /** 是否压暗无关节点/边（两个 3D 页面都开；关闭时所有节点/边保持同一亮度）。 */
   dimUnrelated?: boolean;
   visuals?: GraphWorldVisuals;
   /** 地面网格（缺省按节点最低点 -9、尺寸 300、工作分解样式）。 */
   grid?: { size?: number; y?: number; opacity?: number };
   toolbarBadge: ReactNode;
   legend: ReactNode;
-  viewportClassName?: string;
+  viewportClassName: string;
   children?: ReactNode;
 }
-
-const DEFAULT_VIEWPORT_CLASS =
-  'h-[calc(100dvh-300px)] min-h-120 w-full bg-[#050a18] sm:h-[calc(100dvh-250px)] lg:h-[calc(100dvh-225px)]';
 
 interface SceneNode {
   key: string;
@@ -142,6 +145,7 @@ interface SceneNode {
 interface SceneEdge {
   a: number;
   b: number;
+  color: THREE.Color;
   perp: THREE.Vector3;
   lift: THREE.Vector3;
   phase: number;
@@ -166,7 +170,7 @@ export default function GraphWorld({
   grid: gridProp,
   toolbarBadge,
   legend,
-  viewportClassName = DEFAULT_VIEWPORT_CLASS,
+  viewportClassName,
   children,
 }: GraphWorldProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -197,11 +201,6 @@ export default function GraphWorld({
       if (canvas) canvas.style.cursor = hoveredKey || selectedKey ? 'pointer' : 'grab';
     }
   }, [hoveredKey, selectedKey]);
-
-  useEffect(() => {
-    const controls = controlsRef.current;
-    if (controls) controls.autoRotate = autoRotate;
-  }, [autoRotate]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -365,6 +364,7 @@ export default function GraphWorld({
       edges.push({
         a: ai,
         b: bi,
+        color: new THREE.Color(input.color),
         perp,
         lift,
         phase: r1 * Math.PI * 2,
@@ -380,7 +380,6 @@ export default function GraphWorld({
     const edgeVertexCount = edges.length * EDGE_SEGMENTS * 2;
     const linePositions = new Float32Array(edgeVertexCount * 3);
     const lineColors = new Float32Array(edgeVertexCount * 3);
-    const lineBaseColors = new Float32Array(edges.length * 3);
     let lines: THREE.LineSegments | null = null;
     let lineGeometry: THREE.BufferGeometry | null = null;
     let lineMaterial: THREE.LineBasicMaterial | null = null;
@@ -389,15 +388,7 @@ export default function GraphWorld({
     if (edges.length > 0) {
       // 边颜色按输入逐边写入（静态初始化，压暗模式下每帧按 brightness 重算）
       for (let ei = 0; ei < edges.length; ei += 1) {
-        const base = new THREE.Color();
-        // 按输入顺序与有效边对齐：用边两端节点 key 反查输入颜色
-        const aKey = nodes[edges[ei].a].key;
-        const bKey = nodes[edges[ei].b].key;
-        const found = edgeInputs.find((e) => e.a === aKey && e.b === bKey);
-        base.set(found?.color ?? '#8ab4ff');
-        lineBaseColors[ei * 3] = base.r;
-        lineBaseColors[ei * 3 + 1] = base.g;
-        lineBaseColors[ei * 3 + 2] = base.b;
+        const base = edges[ei].color;
         const dim = dimUnrelated ? 0.35 : 1;
         for (let s = 0; s < EDGE_SEGMENTS * 2; s += 1) {
           const vi = (ei * EDGE_SEGMENTS * 2 + s) * 3;
@@ -415,7 +406,7 @@ export default function GraphWorld({
       lineMaterial = new THREE.LineBasicMaterial({
         vertexColors: true,
         transparent: true,
-        opacity: 0.52,
+        opacity: v.edgeOpacity ?? 0.52,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       });
@@ -436,15 +427,12 @@ export default function GraphWorld({
       const flowAlphas = new Float32Array(edges.length);
       const white = new THREE.Color('#ffffff');
       for (let ei = 0; ei < edges.length; ei += 1) {
-        const c = new THREE.Color(lineBaseColors[ei * 3], lineBaseColors[ei * 3 + 1], lineBaseColors[ei * 3 + 2]).lerp(
-          white,
-          0.55,
-        );
+        const c = edges[ei].color.clone().lerp(white, 0.55);
         flowColors[ei * 3] = c.r;
         flowColors[ei * 3 + 1] = c.g;
         flowColors[ei * 3 + 2] = c.b;
         flowSizes[ei] = 1.5 + hashUnit(String(ei), 21) * 1.3;
-        flowAlphas[ei] = 0.85;
+        flowAlphas[ei] = v.flowOpacity ?? 0.85;
       }
       flowGeometry = new THREE.BufferGeometry();
       flowGeometry.setAttribute('position', new THREE.BufferAttribute(flowPositions, 3).setUsage(THREE.DynamicDrawUsage));
@@ -648,7 +636,6 @@ export default function GraphWorld({
 
     // ---------- 每帧更新 ----------
     let intro = 0;
-    let introSettled = false;
     let worldAngle = 0;
     let lastSelectedEmit = 0;
     const tmpVec = new THREE.Vector3();
@@ -744,15 +731,18 @@ export default function GraphWorld({
           curvePoint[s * 3 + 2] = iu * iu * a.z + 2 * iu * u * mz + u * u * b.z;
         }
         if (dimUnrelated) {
-          // 高亮相关边，压暗其余（平滑过渡）
+          // 高亮相关边，压暗其余（平滑过渡）；无交互时按 edgeIdleBrightness 保持柔和的底色
           const connected = !activeKey || nodes[edge.a].key === activeKey || nodes[edge.b].key === activeKey;
-          const targetBrightness = connected ? edge.highlightLevel : 0.06;
+          const idleBrightness = v.edgeIdleBrightness ?? 1;
+          const targetBrightness = connected
+            ? (activeKey ? edge.highlightLevel : idleBrightness)
+            : 0.06;
           edge.brightness += (targetBrightness - edge.brightness) * 0.12;
           for (let s = 0; s < EDGE_SEGMENTS * 2; s += 1) {
             const vi = (ei * EDGE_SEGMENTS * 2 + s) * 3;
-            lineColors[vi] = lineBaseColors[ei * 3] * edge.brightness;
-            lineColors[vi + 1] = lineBaseColors[ei * 3 + 1] * edge.brightness;
-            lineColors[vi + 2] = lineBaseColors[ei * 3 + 2] * edge.brightness;
+            lineColors[vi] = edge.color.r * edge.brightness;
+            lineColors[vi + 1] = edge.color.g * edge.brightness;
+            lineColors[vi + 2] = edge.color.b * edge.brightness;
           }
         }
         for (let s = 0; s < EDGE_SEGMENTS; s += 1) {
@@ -798,11 +788,10 @@ export default function GraphWorld({
         const e = easeOutCubic(intro);
         const rotated = homeOffset.clone().applyAxisAngle(UP_AXIS, (1 - e) * (v.introSpin ?? -0.85));
         camera.position.copy(focusCenter).addScaledVector(rotated, (v.introStartScale ?? 0.4) + (1 - (v.introStartScale ?? 0.4)) * e);
-        controls.autoRotate = false;
-      } else if (!introSettled) {
-        introSettled = true;
-        controls.autoRotate = autoRotateRef.current;
       }
+      // 入场期间不自转；有节点悬浮/选中（详情卡片打开）时暂停，移开后恢复用户设置
+      const paused = hoveredKeyRef.current !== null || selectedKeyRef.current !== null;
+      controls.autoRotate = intro >= 1 && autoRotateRef.current && !paused;
       const introEase = easeOutCubic(intro);
 
       worldAngle += dt * 0.055;

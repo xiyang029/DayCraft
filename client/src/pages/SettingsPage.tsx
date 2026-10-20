@@ -148,7 +148,6 @@ export default function SettingsPage() {
   if (isLoading) {
     return (
       <div className="flex flex-col gap-3">
-        <Skeleton className="h-8 w-48" />
         <Skeleton className="h-10 w-full" />
         <Skeleton className="h-64 w-full" />
       </div>
@@ -157,8 +156,6 @@ export default function SettingsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold tracking-tight">系统设置</h1>
-
       <Card>
         <CardHeader>
           <CardTitle className="text-xl">AI功能设置</CardTitle>

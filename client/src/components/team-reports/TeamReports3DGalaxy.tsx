@@ -1,17 +1,20 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import * as THREE from 'three';
-import {
-  MousePointer2 as MousePointer2Icon,
-  X as XIcon,
-} from 'lucide-react';
 import GraphWorld, {
   type GraphWorldEdgeInput,
   type GraphWorldNodeInput,
-  type GraphWorldVisuals,
 } from '@/components/three/GraphWorld';
+import { GraphDetailCard, DetailStat, GraphLegendCard } from '@/components/three/GraphHud';
+import {
+  TREE_DENSE_VISUALS,
+  TREE_INACTIVE_COLOR,
+  TREE_LEVEL_COLORS,
+  TREE_VIEWPORT_CLASS,
+  treeGrid,
+  treeNodeRadius,
+} from '@/components/three/tree-theme';
+import { useGraphHover } from '@/components/three/use-graph-hover';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { TeamGraph } from '@/lib/services/team-reports';
 
 export type TeamNodeRef = { type: 'member' | 'project'; id: string };
@@ -23,56 +26,19 @@ interface TeamReports3DGalaxyProps {
 }
 
 const MAX_LINKS = 600;
-const CORE_COLOR = '#fef3c7';
-const MEMBER_ACTIVE = '#22d3ee';
-const MEMBER_IDLE = '#475569';
-const PROJECT_ACTIVE = '#a855f7';
-const PROJECT_IDLE = '#334155';
+
+// 与工作分解 3D 世界共用同一套层级配色：核心=项目蓝，人员=1级绿，项目=2级琥珀
+const CORE_COLOR = TREE_LEVEL_COLORS[0];
+const MEMBER_ACTIVE = TREE_LEVEL_COLORS[1];
+const PROJECT_ACTIVE = TREE_LEVEL_COLORS[2];
 const CORE_KEY = 'core:__core__';
-
-const GALAXY_VISUALS: GraphWorldVisuals = {
-  fogDensity: 0.0019,
-  cameraFar: 3000,
-  minDistance: 12,
-  maxDistance: 420,
-  rotateSpeed: 0.45,
-  hemiIntensity: 0.95,
-  dirIntensity: 1.2,
-  dirPosition: [60, 90, 40],
-  coreLightColor: '#ffe9b5',
-  coreLightIntensity: 120,
-  coreLightDistance: 260,
-  skyRadius: 1400,
-  dustCount: 600,
-  dustInner: 60,
-  dustOuter: 460,
-  scanColors: ['#22d3ee', '#a855f7', '#f59e0b'],
-  scanY: 0,
-  scanRadius: (r: number) => r * 1.25 + 20,
-  bloomStrength: 0.6,
-  bloomRadius: 0.75,
-  bloomThreshold: 0.66,
-  edgeSegments: 6,
-  maxSparks: 1400,
-  introDuration: 1.8,
-  glowFactor: 7.2,
-  glowBoostFactor: 3,
-  labelLift: 2.4,
-  labelStyle: { fontSize: 46, padX: 72, maxLength: 10 },
-  homeMinDistance: 0,
-  homeDistanceFactor: 1.85,
-  homeDir: [0.62, 0.5, 1],
-  introStartScale: 0.42,
-  introSpin: -0.9,
-};
-
-const GALAXY_VIEWPORT_CLASS =
-  'h-[calc(100dvh-330px)] min-h-120 w-full bg-[#050a18] sm:h-[calc(100dvh-300px)] lg:h-[calc(100dvh-280px)]';
+const CORE_EDGE_ACTIVE = `#${new THREE.Color(MEMBER_ACTIVE).lerp(new THREE.Color('#ffffff'), 0.225).getHexString()}`;
+const CORE_EDGE_IDLE = `#${new THREE.Color(MEMBER_ACTIVE).lerp(new THREE.Color('#ffffff'), 0.081).getHexString()}`;
 
 const isPickableKey = (key: string): boolean => key !== CORE_KEY;
 
 export default function TeamReports3DGalaxy({ graph, selected, onPick }: TeamReports3DGalaxyProps) {
-  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  const { hoveredKey, onHoverKeyChange, detailHoverProps, clearHover } = useGraphHover();
 
   const selectedKey = selected ? `${selected.type}:${selected.id}` : null;
 
@@ -127,31 +93,31 @@ export default function TeamReports3DGalaxy({ graph, selected, onPick }: TeamRep
   }, [detailRef, graph.links]);
 
   const detailRelated = useMemo(() => {
-    if (!detailRef) return [] as { id: string; label: string; itemCount: number; lastDate: string }[];
+    if (!detailRef) return [] as RelatedItem[];
     if (detailRef.type === 'member') {
-      return detailLinks
-        .map((link) => {
+      return sortRelated(
+        detailLinks.map((link) => {
           const project = graph.projects.find((p) => p.id === link.project_id);
-          if (!project) return null;
-          return { id: project.id, label: project.name, itemCount: link.item_count, lastDate: link.last_date };
-        })
-        .filter((item): item is { id: string; label: string; itemCount: number; lastDate: string } => item !== null)
-        .sort((a, b) => b.itemCount - a.itemCount);
+          return project
+            ? { id: project.id, label: project.name, itemCount: link.item_count, lastDate: link.last_date }
+            : null;
+        }),
+      );
     }
-    return detailLinks
-      .map((link) => {
+    return sortRelated(
+      detailLinks.map((link) => {
         const member = graph.members.find((m) => m.id === link.user_id);
-        if (!member) return null;
-        return { id: member.id, label: member.name, itemCount: link.item_count, lastDate: link.last_date };
-      })
-      .filter((item): item is { id: string; label: string; itemCount: number; lastDate: string } => item !== null)
-      .sort((a, b) => b.itemCount - a.itemCount);
+        return member
+          ? { id: member.id, label: member.name, itemCount: link.item_count, lastDate: link.last_date }
+          : null;
+      }),
+    );
   }, [detailRef, detailLinks, graph.members, graph.projects]);
 
   const closeDetail = useCallback(() => {
-    setHoveredKey(null);
+    clearHover();
     onPick(null);
-  }, [onPick]);
+  }, [clearHover, onPick]);
 
   // ---------- 布局：中心团队核心 → 人员环 → 项目环 ----------
   const layout = useMemo(() => {
@@ -164,7 +130,7 @@ export default function TeamReports3DGalaxy({ graph, selected, onPick }: TeamRep
       label: '团队报告',
       sublabel: `${graph.totals.members} 人 · ${graph.totals.projects} 项目`,
       base: new THREE.Vector3(0, 0, 0),
-      radius: 3.0,
+      radius: treeNodeRadius(0),
       color: CORE_COLOR,
       activity: 1,
     });
@@ -184,10 +150,10 @@ export default function TeamReports3DGalaxy({ graph, selected, onPick }: TeamRep
         key: `member:${member.id}`,
         label: active || member.daily_count > 0 ? member.name : null,
         sublabel: `${member.daily_count} 日报 · ${member.item_count} 条`,
-        labelAccent: MEMBER_ACTIVE,
+        labelAccent: active ? MEMBER_ACTIVE : TREE_INACTIVE_COLOR,
         base: new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius),
-        radius: 1.5 + Math.min(member.item_count, 30) * 0.045,
-        color: active ? MEMBER_ACTIVE : MEMBER_IDLE,
+        radius: treeNodeRadius(1) + Math.min(member.item_count, 30) * 0.03,
+        color: active ? MEMBER_ACTIVE : TREE_INACTIVE_COLOR,
         activity: Math.min(1, member.item_count / 20),
       });
     });
@@ -207,21 +173,21 @@ export default function TeamReports3DGalaxy({ graph, selected, onPick }: TeamRep
         key: `project:${project.id}`,
         label: active ? project.name : null,
         sublabel: `${project.item_count} 条 · ${project.member_count} 人`,
+        labelAccent: active ? PROJECT_ACTIVE : TREE_INACTIVE_COLOR,
         base: new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius),
-        radius: 1.8 + Math.min(project.item_count, 40) * 0.045,
-        color: active ? PROJECT_ACTIVE : PROJECT_IDLE,
+        radius: treeNodeRadius(2) + Math.min(project.item_count, 40) * 0.03,
+        color: active ? PROJECT_ACTIVE : TREE_INACTIVE_COLOR,
         activity: Math.min(1, project.item_count / 30),
       });
     });
 
     // 核心 → 人员弱边（全量）
     for (const member of graph.members) {
-      const strength = member.item_count > 0 ? 0.5 : 0.18;
       edges.push({
         a: CORE_KEY,
         b: `member:${member.id}`,
         salt: `core-${member.id}`,
-        color: `#${new THREE.Color(MEMBER_ACTIVE).lerp(white, strength * 0.45).getHexString()}`,
+        color: member.item_count > 0 ? CORE_EDGE_ACTIVE : CORE_EDGE_IDLE,
         highlightLevel: 0.75,
       });
     }
@@ -240,17 +206,9 @@ export default function TeamReports3DGalaxy({ graph, selected, onPick }: TeamRep
       });
     }
 
-    const outerRadius = projectRingRadius + Math.max(0, Math.floor(Math.max(0, projectsSorted.length - 1) / 16)) * 22;
-    const boundingRadius = outerRadius + 30;
-    return {
-      nodes,
-      edges,
-      grid: {
-        size: Math.max(240, boundingRadius * 4),
-        y: -boundingRadius * 0.75,
-        opacity: 0.32,
-      },
-    };
+    let minY = 0;
+    for (const node of nodes) minY = Math.min(minY, node.base.y);
+    return { nodes, edges, minY };
   }, [graph]);
 
   return (
@@ -260,109 +218,94 @@ export default function TeamReports3DGalaxy({ graph, selected, onPick }: TeamRep
       selectedKey={selectedKey}
       hoveredKey={hoveredKey}
       onPick={handleEnginePick}
-      onHoverKeyChange={setHoveredKey}
+      onHoverKeyChange={onHoverKeyChange}
       isPickableKey={isPickableKey}
       dimUnrelated
-      visuals={GALAXY_VISUALS}
-      grid={layout.grid}
-      viewportClassName={GALAXY_VIEWPORT_CLASS}
+      visuals={TREE_DENSE_VISUALS}
+      grid={treeGrid(layout.minY)}
+      viewportClassName={TREE_VIEWPORT_CLASS}
       toolbarBadge={(
         <Badge variant="secondary" className="ml-1">
           {graph.totals.members} 人 · {graph.totals.projects} 项目 · {graph.totals.items} 条
         </Badge>
       )}
       legend={(
-        <Card className="absolute right-4 bottom-4 left-4 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 sm:left-auto">
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-            <span className="inline-block size-2.5 rounded-full" style={{ backgroundColor: CORE_COLOR, boxShadow: `0 0 8px ${CORE_COLOR}` }} />
-            团队核心
-          </span>
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-            <span className="inline-block size-2.5 rounded-full" style={{ backgroundColor: MEMBER_ACTIVE, boxShadow: `0 0 8px ${MEMBER_ACTIVE}` }} />
-            人员（有日报）
-          </span>
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-            <span className="inline-block size-2.5 rounded-full" style={{ backgroundColor: PROJECT_ACTIVE, boxShadow: `0 0 8px ${PROJECT_ACTIVE}` }} />
-            项目（有日报）
-          </span>
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-            <span className="inline-block size-2.5 rounded-full bg-slate-500" />
-            本期无记录
-          </span>
-          <span className="inline-flex w-full items-center gap-1 text-xs text-muted-foreground sm:w-auto">
-            <MousePointer2Icon className="size-3.5" />
-            {selectedLabel ? `已选：${selectedLabel}（点击空白取消）` : '悬浮或点击人员/项目查看详情 · 拖拽旋转 · 滚轮缩放'}
-          </span>
-        </Card>
+        <GraphLegendCard
+          items={[
+            { color: CORE_COLOR, label: '团队核心' },
+            { color: MEMBER_ACTIVE, label: '人员（有日报）' },
+            { color: PROJECT_ACTIVE, label: '项目（有日报）' },
+            { color: TREE_INACTIVE_COLOR, label: '本期无记录' },
+          ]}
+          hint={
+            selectedLabel
+              ? `已选：${selectedLabel}（点击空白取消）`
+              : '悬浮或点击人员/项目查看详情 · 拖拽旋转 · 滚轮缩放'
+          }
+        />
       )}
     >
-      {/* 详情卡片：悬浮或点击节点时显示（同工作分解 3D 世界右上角） */}
+      {/* 详情卡片：悬浮或点击节点时显示（与工作分解 3D 世界共用同一套卡片样式） */}
       {detailRef && (detailMember || detailProject) && (
-        <Card className="absolute top-4 right-4 z-10 w-72 max-w-[calc(100%-2rem)]" style={{ maxHeight: 'calc(100% - 2rem)' }}>
-          <CardHeader>
-            <CardTitle className="truncate">{detailMember?.name ?? detailProject?.name}</CardTitle>
-            <CardAction>
-              <Button variant="ghost" size="icon-sm" aria-label="关闭详情" onClick={closeDetail}>
-                <XIcon />
-              </Button>
-            </CardAction>
-          </CardHeader>
-          <CardContent className="space-y-3 overflow-y-auto">
-            {detailMember && (
-              <>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge variant={detailMember.item_count > 0 ? 'secondary' : 'outline'}>
-                    {detailMember.item_count > 0 ? '本期活跃' : '本期无记录'}
+        <GraphDetailCard
+          title={detailMember?.name ?? detailProject?.name ?? ''}
+          onClose={closeDetail}
+          hoverProps={detailHoverProps}
+        >
+          {detailMember && (
+            <>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge variant={detailMember.item_count > 0 ? 'secondary' : 'outline'}>
+                  {detailMember.item_count > 0 ? '本期活跃' : '本期无记录'}
+                </Badge>
+                {detailMember.role.map((role) => (
+                  <Badge key={`role-${role}`} variant="outline">
+                    {role === 'admin' ? '管理员' : '成员'}
                   </Badge>
-                  {detailMember.role.map((role) => (
-                    <Badge key={`role-${role}`} variant="outline">
-                      {role === 'admin' ? '管理员' : '成员'}
-                    </Badge>
-                  ))}
-                </div>
-                <p className="text-xs break-all text-muted-foreground">{detailMember.email}</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <DetailStat label="日报" value={detailMember.daily_count} />
-                  <DetailStat label="日报条目" value={detailMember.item_count} />
-                  <DetailStat label="周报" value={detailMember.weekly_count} />
-                  <DetailStat label="月报" value={detailMember.monthly_count} />
-                </div>
-                {detailMember.last_date && (
-                  <p className="text-xs text-muted-foreground">最近提交日期：{detailMember.last_date}</p>
-                )}
-                {detailMember.last_report_edit_at && (
-                  <p className="text-xs text-muted-foreground">
-                    最近编辑：{formatDateTime(detailMember.last_report_edit_at)}
-                  </p>
-                )}
-                <DetailRelatedList title="参与项目" items={detailRelated} emptyText="本期未关联项目" />
-              </>
-            )}
+                ))}
+              </div>
+              <p className="text-xs break-all text-muted-foreground">{detailMember.email}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <DetailStat label="日报" value={detailMember.daily_count} />
+                <DetailStat label="日报条目" value={detailMember.item_count} />
+                <DetailStat label="周报" value={detailMember.weekly_count} />
+                <DetailStat label="月报" value={detailMember.monthly_count} />
+              </div>
+              {detailMember.last_date && (
+                <p className="text-xs text-muted-foreground">最近提交日期：{detailMember.last_date}</p>
+              )}
+              {detailMember.last_report_edit_at && (
+                <p className="text-xs text-muted-foreground">
+                  最近编辑：{formatDateTime(detailMember.last_report_edit_at)}
+                </p>
+              )}
+              <DetailRelatedList title="参与项目" items={detailRelated} emptyText="本期未关联项目" />
+            </>
+          )}
 
-            {detailProject && (
-              <>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge variant={detailProject.is_active ? 'secondary' : 'outline'}>
-                    {detailProject.is_active ? '进行中' : '已归档'}
-                  </Badge>
-                  <Badge variant="outline">{detailProject.code}</Badge>
-                  <Badge variant={detailProject.item_count > 0 ? 'secondary' : 'outline'}>
-                    {detailProject.item_count > 0 ? '本期有记录' : '本期无记录'}
-                  </Badge>
-                </div>
-                <p className="text-xs break-all text-muted-foreground">负责人：{detailProject.owner_name}</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <DetailStat label="日报条目" value={detailProject.item_count} />
-                  <DetailStat label="参与人数" value={detailProject.member_count} />
-                </div>
-                {detailProject.last_date && (
-                  <p className="text-xs text-muted-foreground">最近记录日期：{detailProject.last_date}</p>
-                )}
-                <DetailRelatedList title="参与人员" items={detailRelated} emptyText="本期无人员记录" />
-              </>
-            )}
-          </CardContent>
-        </Card>
+          {detailProject && (
+            <>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge variant={detailProject.is_active ? 'secondary' : 'outline'}>
+                  {detailProject.is_active ? '进行中' : '已归档'}
+                </Badge>
+                <Badge variant="outline">{detailProject.code}</Badge>
+                <Badge variant={detailProject.item_count > 0 ? 'secondary' : 'outline'}>
+                  {detailProject.item_count > 0 ? '本期有记录' : '本期无记录'}
+                </Badge>
+              </div>
+              <p className="text-xs break-all text-muted-foreground">负责人：{detailProject.owner_name}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <DetailStat label="日报条目" value={detailProject.item_count} />
+                <DetailStat label="参与人数" value={detailProject.member_count} />
+              </div>
+              {detailProject.last_date && (
+                <p className="text-xs text-muted-foreground">最近记录日期：{detailProject.last_date}</p>
+              )}
+              <DetailRelatedList title="参与人员" items={detailRelated} emptyText="本期无人员记录" />
+            </>
+          )}
+        </GraphDetailCard>
       )}
     </GraphWorld>
   );
@@ -375,13 +318,17 @@ function formatDateTime(value: string): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function DetailStat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-md border border-border bg-muted/40 px-2 py-1.5">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-sm font-semibold text-foreground">{value}</p>
-    </div>
-  );
+interface RelatedItem {
+  id: string;
+  label: string;
+  itemCount: number;
+  lastDate: string;
+}
+
+function sortRelated(items: (RelatedItem | null)[]): RelatedItem[] {
+  return items
+    .filter((item): item is RelatedItem => item !== null)
+    .sort((a, b) => b.itemCount - a.itemCount);
 }
 
 function DetailRelatedList({
@@ -390,7 +337,7 @@ function DetailRelatedList({
   emptyText,
 }: {
   title: string;
-  items: { id: string; label: string; itemCount: number; lastDate: string }[];
+  items: RelatedItem[];
   emptyText: string;
 }) {
   const shown = items.slice(0, 6);

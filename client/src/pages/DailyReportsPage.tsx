@@ -27,18 +27,15 @@ interface ReportWithItems {
   id: string;
   date: string;
   day: string;
-  status: string;
   items: ReportItemWithProject[];
 }
 
 interface ReportItemWithProject {
-  id: string;
   content: string;
   project: Project;
 }
 
 interface ReportItemData {
-  id: string;
   content: string;
   projects: Project | Project[];
 }
@@ -46,7 +43,6 @@ interface ReportItemData {
 // 新增日期项接口
 interface DayItem {
   date: string;
-  formattedDate: string;
   day: string;
   hasReport: boolean;
   report: ReportWithItems | null;
@@ -59,7 +55,6 @@ interface WeekData {
   year: number;
   startDate: Date;
   endDate: Date;
-  formattedPeriod: string;
   days: DayItem[];
 }
 
@@ -191,7 +186,6 @@ export default function DailyReportsPage() {
         
         return {
           date: dateStr,
-          formattedDate: format(date, 'yyyy-MM-dd'),
           day,
           hasReport: false,
           report: null,
@@ -204,7 +198,6 @@ export default function DailyReportsPage() {
         year,
         startDate: weekStartDate,
         endDate: weekEndDate,
-        formattedPeriod: `${format(weekDates[0], 'yyyy-MM-dd')} 至 ${format(weekDates[weekDates.length - 1], 'yyyy-MM-dd')}`,
         days
       });
     }
@@ -342,7 +335,6 @@ export default function DailyReportsPage() {
           // 确保projects是单个Project对象而不是数组
           const project = Array.isArray(item.projects) ? item.projects[0] : item.projects;
           return {
-            id: item.id as string,
             content: item.content as string,
             project: project as Project
           };
@@ -352,7 +344,6 @@ export default function DailyReportsPage() {
           id: report.id,
           date: formattedDate,
           day,
-          status: '已提交', // 日报状态，目前只有一种状态
           items,
         });
       }
@@ -519,28 +510,21 @@ export default function DailyReportsPage() {
     openReportDialog(date);
   };
 
-  // 复制日报内容为YAML格式
-  const handleCopyReport = (e: React.MouseEvent, report: ReportWithItems) => {
-    e.stopPropagation();
-    
-    // 获取报告中涉及的所有项目
-    const reportProjects = getReportProjects(report);
-    
+  // 生成日报的 YAML 文本（按项目分组）
+  const buildReportYaml = (report: ReportWithItems) => {
     let yamlContent = '';
-    
-    // 按项目组织工作内容
-    reportProjects.forEach(project => {
+    getReportProjects(report).forEach(project => {
       yamlContent += `${project.name}:\n`;
-      
-      // 获取该项目下的所有工作项
-      const projectItems = getProjectItems(report, project.id);
-      projectItems.forEach(item => {
+      getProjectItems(report, project.id).forEach(item => {
         yamlContent += `  - ${item.content}\n`;
       });
-      
-      // 移除项目之间的换行
     });
-    
+    return yamlContent;
+  };
+
+  // 复制日报内容为 YAML 格式
+  const copyReportYaml = (report: ReportWithItems) => {
+    const yamlContent = buildReportYaml(report);
     try {
       // 使用异步函数进行复制
       if (navigator.clipboard && window.isSecureContext) {
@@ -561,6 +545,12 @@ export default function DailyReportsPage() {
       console.error('复制失败:', err);
       toast.add({ title: '复制失败，请重试', type: 'error' });
     }
+  };
+
+  // 复制日报内容为YAML格式
+  const handleCopyReport = (e: React.MouseEvent, report: ReportWithItems) => {
+    e.stopPropagation();
+    copyReportYaml(report);
   };
 
   // 回退复制方法
@@ -631,7 +621,7 @@ export default function DailyReportsPage() {
           </div>
           <ul className="flex list-disc flex-col gap-1 pl-4 marker:text-primary md:gap-2">
             {getProjectItems(report, project.id).map((item, idx) => (
-              <li key={idx} className="text-xs break-words text-foreground md:text-sm">
+              <li key={idx} className="text-xs break-words whitespace-pre-wrap text-foreground md:text-sm">
                 {item.content}
               </li>
             ))}
@@ -676,46 +666,7 @@ export default function DailyReportsPage() {
 
   // 在预览中复制日报内容
   const handlePreviewCopy = () => {
-    if (!previewReport) return;
-    
-    // 获取报告中涉及的所有项目
-    const reportProjects = getReportProjects(previewReport);
-    
-    let yamlContent = '';
-    
-    // 按项目组织工作内容
-    reportProjects.forEach(project => {
-      yamlContent += `${project.name}:\n`;
-      
-      // 获取该项目下的所有工作项
-      const projectItems = getProjectItems(previewReport, project.id);
-      projectItems.forEach(item => {
-        yamlContent += `  - ${item.content}\n`;
-      });
-      
-      // 移除项目之间的换行
-    });
-    
-    try {
-      // 使用异步函数进行复制
-      if (navigator.clipboard && window.isSecureContext) {
-        // 安全上下文中使用标准 Clipboard API
-        navigator.clipboard.writeText(yamlContent)
-          .then(() => {
-            toast.add({ title: '日报内容已复制到剪贴板', type: 'success' });
-          })
-          .catch(err => {
-            console.error('复制失败:', err);
-            fallbackCopyTextToClipboard(yamlContent);
-          });
-      } else {
-        // 回退方法，适用于非安全上下文
-        fallbackCopyTextToClipboard(yamlContent);
-      }
-    } catch (err) {
-      console.error('复制失败:', err);
-      toast.add({ title: '复制失败，请重试', type: 'error' });
-    }
+    if (previewReport) copyReportYaml(previewReport);
   };
 
 
@@ -723,8 +674,6 @@ export default function DailyReportsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold tracking-tight">日报管理</h1>
-
       {/* 今日日报提醒 */}
       {todayReportReminder && !todayReportReminder.hasReport && (
         <Alert>
@@ -763,9 +712,8 @@ export default function DailyReportsPage() {
 
         <CardContent>
         {isLoading ? (
-          <div className="flex items-center justify-center gap-2 p-6 md:p-12">
-            <Spinner className="size-5" />
-            <span className="text-sm text-muted-foreground md:text-base">加载中...</span>
+          <div className="flex items-center justify-center p-6 md:p-12">
+            <Spinner />
           </div>
         ) : weekData.length === 0 ? (
           <Empty>

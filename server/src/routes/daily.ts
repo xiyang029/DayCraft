@@ -126,7 +126,7 @@ dailyReportsRouter.post('/', async (req, res) => {
 
     const now = nowIso();
     let report = db.prepare('SELECT * FROM daily_reports WHERE user_id = ? AND date = ?').get(user.id, body.date) as
-      | Record<string, unknown>
+      | (Record<string, unknown> & { id: string })
       | undefined;
 
     db.exec('BEGIN');
@@ -146,10 +146,10 @@ dailyReportsRouter.post('/', async (req, res) => {
         report = { id, user_id: user.id, date: body.date, created_at: now, updated_at: now };
       }
       const stmt = db.prepare(
-        'INSERT INTO report_items (id, report_id, project_id, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO report_items (id, report_id, project_id, content, created_at) VALUES (?, ?, ?, ?, ?)',
       );
       for (const it of items) {
-        stmt.run(newId(), report.id, it.project_id, it.content.trim(), now, now);
+        stmt.run(newId(), report.id, it.project_id, it.content.trim(), now);
       }
       db.exec('COMMIT');
     } catch (e) {

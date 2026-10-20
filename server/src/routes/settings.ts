@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { SQLInputValue } from 'node:sqlite';
 import { getDb, mapBooleans, newId, nowIso, toInt } from '../lib/database';
 import { requireUser } from '../lib/session';
 import type { UserAISettings } from '../lib/types';
@@ -57,7 +58,7 @@ aiSettingsRouter.put('/', async (req, res) => {
     ensureAIRow(user.id);
 
     const sets: string[] = [];
-    const args: unknown[] = [];
+    const args: SQLInputValue[] = [];
     for (const key of UPDATABLE) {
       if (body[key] !== undefined) {
         if (key === 'is_enabled') {
@@ -65,7 +66,7 @@ aiSettingsRouter.put('/', async (req, res) => {
           args.push(toInt(body[key] as boolean));
         } else {
           sets.push(`${key} = ?`);
-          args.push(body[key]);
+          args.push(body[key] as SQLInputValue);
         }
       }
     }

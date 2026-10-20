@@ -50,6 +50,13 @@ export function getDb(): DatabaseSync {
     ['daily_reports', 'is_plan'],
     // 历史迁移：里程碑字段已下线
     ['work_breakdown_items', 'is_milestone'],
+    // 历史迁移：工作项计划/实际时间字段已下线（从未在界面展示或读取）
+    ['work_breakdown_items', 'planned_start_time'],
+    ['work_breakdown_items', 'planned_end_time'],
+    ['work_breakdown_items', 'actual_start_time'],
+    ['work_breakdown_items', 'actual_end_time'],
+    // 历史迁移：日报条目更新时间为冗余字段（条目只增删，不单独更新）
+    ['report_items', 'updated_at'],
   ];
   for (const [table, col] of dropColumns) {
     try {

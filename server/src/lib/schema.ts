@@ -54,8 +54,7 @@ CREATE TABLE IF NOT EXISTS report_items (
   report_id TEXT NOT NULL REFERENCES daily_reports(id) ON DELETE CASCADE,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   content TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS report_items_report_id_idx ON report_items(report_id);
 CREATE INDEX IF NOT EXISTS report_items_project_id_idx ON report_items(project_id);
@@ -73,10 +72,6 @@ CREATE TABLE IF NOT EXISTS work_breakdown_items (
   tags TEXT,
   members TEXT,
   progress_notes TEXT,
-  planned_start_time TEXT,
-  planned_end_time TEXT,
-  actual_start_time TEXT,
-  actual_end_time TEXT,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

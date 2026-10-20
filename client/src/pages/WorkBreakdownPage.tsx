@@ -900,16 +900,12 @@ export default function WorkBreakdownPage() {
   // 计算工作项进度的辅助函数
   const getItemProgress = (item: WorkItem): number => {
     return calculateWorkItemProgress({
-      id: item.id,
       status: item.status,
       children: item.children?.map(child => ({
-        id: child.id,
         status: child.status,
         children: child.children?.map(grandChild => ({
-          id: grandChild.id,
           status: grandChild.status,
           children: grandChild.children?.map(greatGrandChild => ({
-            id: greatGrandChild.id,
             status: greatGrandChild.status,
             children: greatGrandChild.children
           }))
@@ -1020,7 +1016,7 @@ export default function WorkBreakdownPage() {
             <AlertDialogAction variant="destructive" onClick={confirmDeleteWorkItem} disabled={isSaving}>
               {isSaving ? (
                 <>
-                  <Spinner className="mr-2" />
+                  <Spinner data-icon="inline-start" />
                   删除中...
                 </>
               ) : "确认删除"}
@@ -1039,15 +1035,8 @@ export default function WorkBreakdownPage() {
         potentialParents={allPotentialParents}
       />
 
-      {/* 标题行 */}
-      <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4 sm:mb-0">
-            {selectedProject ? `${selectedProject.name} 工作分解` : '工作分解'}
-          </h1>
-        </div>
-        
-        <div className="flex flex-wrap items-center gap-3">
+      {/* 工具栏 */}
+      <div className="flex flex-wrap items-center gap-3">
           {/* 项目选择器 - 放在左侧 */}
           <div className="w-full sm:w-auto">
             <Field orientation="horizontal">
@@ -1170,7 +1159,6 @@ export default function WorkBreakdownPage() {
               </TabsList>
             </Tabs>
           </div>
-        </div>
       </div>
       
       {/* 显示已选筛选条件 */}
@@ -1205,15 +1193,14 @@ export default function WorkBreakdownPage() {
       
       {isLoading ? (
         <div className="flex items-center justify-center h-64">
-          <Spinner className="size-10" />
-          <span className="ml-3 text-gray-600">加载中...</span>
+          <Spinner />
         </div>
       ) : (
         <div>
           {selectedProject ? (
             <div>
               {workItems.length > 0 ? (
-                <div className="flex flex-col gap-4">
+                <div className={cn("flex flex-col gap-4", viewMode === "list" && "pb-24")}>
                   {/* 项目进度统计概览（仅列表视图） */}
                   {(viewMode === 'list') && (
                     <Card className="p-4">
@@ -1351,7 +1338,7 @@ export default function WorkBreakdownPage() {
                     <Suspense
                       fallback={(
                         <div className="flex h-[calc(100dvh-300px)] min-h-120 w-full items-center justify-center rounded-lg bg-[#050a18] sm:h-[calc(100dvh-250px)] lg:h-[calc(100dvh-225px)]">
-                          <Spinner className="size-8 text-sky-400" />
+                          <Spinner />
                           <span className="ml-3 text-sm text-sky-200/80">正在构建 3D 世界…</span>
                         </div>
                       )}
@@ -1364,7 +1351,7 @@ export default function WorkBreakdownPage() {
                     </Suspense>
                   ) : viewMode === 'map' ? (
                     <div className="bg-white p-2 sm:p-4 rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                      <Suspense fallback={<div className="text-sm text-gray-500">导图加载中...</div>}>
+                      <Suspense fallback={<div className="flex items-center justify-center p-8"><Spinner /></div>}>
                         <WorkMap
                           workItems={selectedStatuses.length > 0 ? filteredWorkItems : workItems}
                           projectName={selectedProject.name}
@@ -1400,25 +1387,24 @@ export default function WorkBreakdownPage() {
                         </SortableContext>
                       </DndContext>
 
-                      {/* 底部添加一级工作项按钮 */}
-                      <div className="mt-8 flex justify-center">
-                        <Button
-                          onClick={addRootWorkItem}
-                          disabled={isSaving}
-                        >
-                          {isSaving ? (
-                            <>
-                              <Spinner data-icon="inline-start" />
-                              处理中...
-                            </>
-                          ) : (
-                            <>
-                              <PlusIcon data-icon="inline-start" />
-                              添加1级工作项
-                            </>
-                          )}
-                        </Button>
-                      </div>
+                      {/* 固定添加一级工作项按钮：列表再长也无需滚到底部 */}
+                      <Button
+                        onClick={addRootWorkItem}
+                        disabled={isSaving}
+                        className="fixed bottom-6 right-6 z-40 shadow-lg"
+                      >
+                        {isSaving ? (
+                          <>
+                            <Spinner data-icon="inline-start" />
+                            处理中...
+                          </>
+                        ) : (
+                          <>
+                            <PlusIcon data-icon="inline-start" />
+                            添加1级工作项
+                          </>
+                        )}
+                      </Button>
                     </>
                   )}
                 </div>

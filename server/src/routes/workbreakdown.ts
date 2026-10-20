@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { SQLInputValue } from 'node:sqlite';
 import { getDb, newId, nowIso, toInt } from '../lib/database';
 import { requireUser } from '../lib/session';
 import { q } from '../lib/query';
@@ -62,9 +63,8 @@ itemsRouter.post('/', async (req, res) => {
     db.prepare(
       `INSERT INTO work_breakdown_items
         (id, project_id, name, description, parent_id, level, position, is_expanded, status, tags, members,
-         progress_notes, planned_start_time, planned_end_time, actual_start_time, actual_end_time,
-         user_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         progress_notes, user_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       body.project_id,
@@ -78,10 +78,6 @@ itemsRouter.post('/', async (req, res) => {
       body.tags || null,
       body.members || null,
       body.progress_notes || null,
-      body.planned_start_time || null,
-      body.planned_end_time || null,
-      body.actual_start_time || null,
-      body.actual_end_time || null,
       checked.user.id,
       now,
       now,
@@ -138,10 +134,6 @@ const PATCHABLE = [
   'tags',
   'members',
   'progress_notes',
-  'planned_start_time',
-  'planned_end_time',
-  'actual_start_time',
-  'actual_end_time',
 ];
 
 itemsRouter.get('/:id', async (req, res) => {
@@ -167,7 +159,7 @@ itemsRouter.put('/:id', async (req, res) => {
     const body = req.body as Record<string, unknown>;
     const db = getDb();
     const sets: string[] = [];
-    const args: unknown[] = [];
+    const args: SQLInputValue[] = [];
 
     if (body.name !== undefined) {
       const name = String(body.name).trim();
@@ -240,7 +232,11 @@ itemsRouter.delete('/:id', async (req, res) => {
          WHERE project_id = ? AND ${row.parent_id ? 'parent_id = ?' : 'parent_id IS NULL'} AND position > ?
          ORDER BY position ASC`,
       )
-      .all(...(row.parent_id ? [row.project_id, row.parent_id, row.position] : [row.project_id, row.position])) as Array<{
+      .all(
+        ...(row.parent_id
+          ? [row.project_id as string, row.parent_id as string, row.position as number]
+          : [row.project_id as string, row.position as number]),
+      ) as Array<{
       id: string;
       position: number;
     }>;

@@ -10,7 +10,6 @@ type WorkStatus = keyof typeof STATUS_PROGRESS_MAP;
 
 // 工作项接口（简化版，用于进度计算）
 interface ProgressWorkItem {
-  id: string;
   status?: string;
   children?: ProgressWorkItem[];
 }

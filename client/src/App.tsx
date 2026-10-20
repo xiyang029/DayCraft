@@ -19,7 +19,7 @@ import AdminPage from './pages/AdminPage';
 function LoadingScreen() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
-      <Spinner className="size-8 text-primary" />
+      <Spinner />
     </div>
   );
 }

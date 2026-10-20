@@ -13,8 +13,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardAction } from "@/components/ui/card";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
 import {
@@ -30,12 +30,15 @@ interface WorkItem {
   id?: string;
   content: string;
   projectId: string;
+  projectName?: string;
+  projectCode?: string;
 }
 
 interface ReportItemData {
   id: string;
   content: string;
   project_id: string;
+  projects?: { id: string; name: string; code: string } | { id: string; name: string; code: string }[] | null;
 }
 
 interface DailyReportDialogProps {
@@ -72,11 +75,16 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
       const typedItems = (report?.report_items || []) as ReportItemData[];
 
       if (typedItems.length > 0) {
-        setWorkItems(typedItems.map(item => ({
-          id: item.id,
-          content: item.content,
-          projectId: item.project_id
-        })));
+        setWorkItems(typedItems.map(item => {
+          const project = Array.isArray(item.projects) ? item.projects[0] : item.projects;
+          return {
+            id: item.id,
+            content: item.content,
+            projectId: item.project_id,
+            projectName: project?.name,
+            projectCode: project?.code,
+          };
+        }));
         toast.add({ title: '已加载现有日报内容', type: 'info' });
       } else {
         setWorkItems([]);
@@ -185,22 +193,33 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
     setWorkItems(newWorkItems);
   };
 
-  // 按项目分组（含全局下标，供编辑/删除定位）
-  const workItemsGroupedByProject = projects
-    .map(project => {
-      const projectItems = workItems
-        .map((item, globalIndex) => ({ ...item, globalIndex }))
-        .filter(item => item.projectId === project.id);
-      const firstAppearanceIndex = workItems.findIndex(item => item.projectId === project.id);
-      return {
-        projectId: project.id,
-        projectName: `${project.name} (${project.code})`,
-        sortIndex: firstAppearanceIndex === -1 ? Number.MAX_SAFE_INTEGER : firstAppearanceIndex,
-        items: projectItems
-      };
-    })
-    .filter(group => workItems.some(item => item.projectId === group.projectId))
-    .sort((a, b) => a.sortIndex - b.sortIndex);
+  // 按项目分组（优先使用日报明细自带的项目信息，避免停用/非活跃项目被过滤）
+  const workItemsGroupedByProject = (() => {
+    const groups = new Map<string, {
+      projectId: string;
+      projectName: string;
+      items: Array<WorkItem & { globalIndex: number }>;
+    }>();
+
+    workItems.forEach((item, globalIndex) => {
+      if (!item.projectId) return;
+      let group = groups.get(item.projectId);
+      if (!group) {
+        const project = projects.find(p => p.id === item.projectId);
+        const name = project?.name || item.projectName || item.projectId;
+        const code = project?.code || item.projectCode;
+        group = {
+          projectId: item.projectId,
+          projectName: code ? `${name} (${code})` : name,
+          items: [],
+        };
+        groups.set(item.projectId, group);
+      }
+      group.items.push({ ...item, globalIndex });
+    });
+
+    return [...groups.values()];
+  })();
 
   // 可选项目（已使用的不再显示）
   const usedProjectIds = Array.from(new Set(workItems.map(item => item.projectId))).filter(id => id !== '');
@@ -209,14 +228,14 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
   // 复制预览内容为YAML格式
   const handleCopyPreview = () => {
     const validWorkItems = workItems.filter(item => item.content.trim() !== '' && item.projectId);
-    const projectMap = new Map<string, { name: string; code: string; items: string[] }>();
+    const projectMap = new Map<string, { name: string; items: string[] }>();
     validWorkItems.forEach(item => {
       const project = projects.find(p => p.id === item.projectId);
-      if (!project) return;
-      if (!projectMap.has(project.id)) {
-        projectMap.set(project.id, { name: project.name, code: project.code, items: [] });
+      const name = project?.name || item.projectName || item.projectId;
+      if (!projectMap.has(item.projectId)) {
+        projectMap.set(item.projectId, { name, items: [] });
       }
-      projectMap.get(project.id)?.items.push(item.content);
+      projectMap.get(item.projectId)?.items.push(item.content);
     });
     let yamlContent = '';
     projectMap.forEach(project => {
@@ -287,11 +306,10 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
         </DialogHeader>
 
         {isLoading ? (
-          <div className="flex items-center justify-center gap-2 py-12">
-            <Spinner className="size-4" />
-            <span className="text-muted-foreground">加载中...</span>
+          <div className="flex items-center justify-center py-12">
+            <Spinner />
           </div>
-        ) : projects.length === 0 ? (
+        ) : projects.length === 0 && workItems.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
             您目前没有活跃的项目，请先在项目管理中创建并激活项目后再创建日报。
           </p>
@@ -322,21 +340,18 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
                 </div>
 
                 <div className="flex flex-col gap-5">
-                  {projects.map(project => {
-                    const projectWorkItems = workItems.filter(item =>
-                      item.projectId === project.id && item.content.trim() !== ''
-                    );
+                  {workItemsGroupedByProject.map(group => {
+                    const projectWorkItems = group.items.filter(item => item.content.trim() !== '');
                     if (projectWorkItems.length === 0) return null;
                     return (
-                      <div key={project.id} className="rounded-md border-l-2 border-primary bg-accent/50 py-2 pl-3 sm:pl-4">
+                      <div key={group.projectId} className="rounded-md border-l-2 border-primary bg-accent/50 py-2 pl-3 sm:pl-4">
                         <div className="mb-2 flex flex-wrap items-center gap-1.5 text-xs font-medium text-primary sm:text-sm">
                           <FileTextIcon className="size-3.5" />
-                          {project.name}
-                          <span className="text-muted-foreground">{project.code}</span>
+                          {group.projectName}
                         </div>
                         <ul className="flex list-disc flex-col gap-1.5 pl-4 text-xs text-foreground sm:gap-2 sm:text-sm">
                           {projectWorkItems.map((item, idx) => (
-                            <li key={idx} className="break-words">
+                            <li key={idx} className="break-words whitespace-pre-wrap">
                               {item.content}
                             </li>
                           ))}
@@ -446,12 +461,12 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
                 </CardHeader>
                 <CardContent className="flex flex-col gap-2 sm:gap-3">
                   {group.items.map((item) => (
-                    <div key={item.globalIndex} className="flex items-center gap-2 rounded-lg bg-muted p-2 sm:p-3">
+                    <div key={item.globalIndex} className="flex items-start gap-2 rounded-lg bg-muted p-2 sm:p-3">
                       <Field className="grow">
                         <FieldLabel htmlFor={`daily-dialog-item-${item.globalIndex}`} className="sr-only">工作内容</FieldLabel>
-                        <Input
+                        <Textarea
                           id={`daily-dialog-item-${item.globalIndex}`}
-                          type="text"
+                          rows={2}
                           value={item.content}
                           onChange={(e) => handleWorkItemContentChange(item.globalIndex, e.target.value)}
                           placeholder="请输入工作内容..."
@@ -495,7 +510,7 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
         )}
 
         <DialogFooter>
-          {projects.length > 0 && !isLoading && (
+          {(projects.length > 0 || workItems.length > 0) && !isLoading && (
             <Button variant="outline" size="sm"
               type="button"
               onClick={togglePreview}
@@ -507,7 +522,7 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
           <Button size="sm"
             type="button"
             onClick={handleSave}
-            disabled={isSaving || projects.length === 0 || isLoadingExistingReport}
+            disabled={isSaving || (projects.length === 0 && workItems.length === 0) || isLoadingExistingReport}
           >
             {isSaving ? (
               <>

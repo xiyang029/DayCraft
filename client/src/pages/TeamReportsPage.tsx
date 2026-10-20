@@ -211,7 +211,7 @@ export default function TeamReportsPage() {
           {graphLoading && !graph ? (
             <Card>
               <CardContent className="flex h-120 items-center justify-center gap-3">
-                <Spinner className="size-8 text-primary" />
+                <Spinner />
                 <span className="text-sm text-muted-foreground">正在构建团队报告星图…</span>
               </CardContent>
             </Card>
@@ -220,7 +220,7 @@ export default function TeamReportsPage() {
               fallback={(
                 <Card>
                   <CardContent className="flex h-120 items-center justify-center gap-3">
-                    <Spinner className="size-8 text-sky-400" />
+                    <Spinner />
                     <span className="text-sm text-muted-foreground">正在构建团队报告星图…</span>
                   </CardContent>
                 </Card>
@@ -421,9 +421,8 @@ function DetailBody({
       )}
 
       {loading && (
-        <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-          <Spinner className="size-4" />
-          加载中…
+        <div className="flex items-center justify-center py-6">
+          <Spinner />
         </div>
       )}
 

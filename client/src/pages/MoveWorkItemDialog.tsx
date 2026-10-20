@@ -198,7 +198,7 @@ export default function MoveWorkItemDialog({
               <div className="flex flex-col gap-2">
                 {isLoadingParents ? (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Spinner className="size-4" />
+                    <Spinner />
                     加载可选父级...
                   </div>
                 ) : potentialParents.length > 0 ? (
@@ -210,7 +210,7 @@ export default function MoveWorkItemDialog({
                       value: p.id,
                     }))}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="选择目标父级工作项">
                         {selectedParentId &&
                           (() => {

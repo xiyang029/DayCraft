@@ -51,7 +51,7 @@ app.use('/api', (_req, res) => {
 const distDir = path.join(ROOT, 'client', 'dist');
 if (fs.existsSync(path.join(distDir, 'index.html'))) {
   app.use(express.static(distDir));
-  app.get('*', (_req, res) => {
+  app.get('/{*splat}', (_req, res) => {
     res.sendFile(path.join(distDir, 'index.html'));
   });
   console.log(`[server] 托管前端静态目录: ${distDir}`);

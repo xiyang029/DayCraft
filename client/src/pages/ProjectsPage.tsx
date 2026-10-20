@@ -293,8 +293,7 @@ export default function ProjectsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">项目管理</h1>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           {/* 搜索框 */}
           <InputGroup className="w-full sm:w-64">
@@ -336,7 +335,7 @@ export default function ProjectsPage() {
                   name="name"
                   control={control}
                   render={({ field }) => {
-                    // ui Input 是普通函数组件（无 forwardRef），React 18 下不能接收 field.ref
+                    // ui Input 未把 ref 转发到 DOM，不能直接接收 field.ref
                     const { ref, ...inputProps } = field;
                     return (
                       <Input id="name" placeholder="输入项目名称" aria-invalid={!!errors.name} {...inputProps} />
@@ -411,7 +410,7 @@ export default function ProjectsPage() {
       <Card className="overflow-hidden p-0">
         {isLoading ? (
           <div className="flex justify-center p-8">
-            <Spinner className="size-8 text-primary" />
+            <Spinner />
           </div>
         ) : filteredProjects.length === 0 ? (
           <Empty className="p-8">

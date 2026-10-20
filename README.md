@@ -13,8 +13,8 @@
 
 ```
 DayCraft/
-├── client/   前端 SPA：Vite + React 18 + react-router-dom 6 + Tailwind CSS
-├── server/   后端 API：Express 4 + node:sqlite（内置模块，零数据库依赖）
+├── client/   前端 SPA：Vite 8 + React 19 + react-router-dom 7 + Tailwind CSS
+├── server/   后端 API：Express 5 + node:sqlite（内置模块，零数据库依赖）
 ├── data/     SQLite 库文件（默认 ./data/daycraft.db，git 忽略）
 ├── scripts/  备份 / 恢复 / 全接口冒烟测试
 └── db_backups/  备份产物（git 忽略）
@@ -26,7 +26,7 @@ DayCraft/
 
 ## 快速开始
 
-环境要求：Node.js 22+、pnpm 10+。
+环境要求：Node.js 22.12+、pnpm 10+。
 
 ```bash
 # 1. 安装依赖（工作区统一安装）

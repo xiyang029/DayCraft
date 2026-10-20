@@ -222,9 +222,6 @@ export default function AdminPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
-        <UserCogIcon className="size-5 text-primary" /> 系统管理
-      </h1>
       {/* 统计卡片 */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {loading ? (

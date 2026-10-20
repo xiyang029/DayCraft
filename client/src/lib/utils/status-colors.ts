@@ -16,7 +16,7 @@ type BadgeVariant =
   | 'ghost'
   | 'link';
 
-export interface WorkStatusStyle {
+interface WorkStatusStyle {
   /** 状态值，同时作为 Select 的 value */
   value: WorkStatus;
   /** Badge 组件的 variant */

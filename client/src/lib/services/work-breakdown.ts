@@ -15,10 +15,6 @@ export interface WorkItem {
   tags?: string;
   members?: string;
   progress_notes?: string;
-  planned_start_time?: string;
-  planned_end_time?: string;
-  actual_start_time?: string;
-  actual_end_time?: string;
 }
 
 // 缓存接口（按项目缓存，登录用户隐含在会话中）
@@ -83,10 +79,6 @@ export class WorkBreakdownService {
     tags: string = '',
     members: string = '',
     progress_notes: string = '',
-    planned_start_time: string = '',
-    planned_end_time: string = '',
-    actual_start_time: string = '',
-    actual_end_time: string = '',
   ): Promise<{ id: string }> {
     const data = await apiPost<{ id: string }>('/api/work-breakdown/items', {
       project_id: projectId,
@@ -100,10 +92,6 @@ export class WorkBreakdownService {
       tags,
       members,
       progress_notes,
-      planned_start_time: planned_start_time || null,
-      planned_end_time: planned_end_time || null,
-      actual_start_time: actual_start_time || null,
-      actual_end_time: actual_end_time || null,
     });
 
     // 清除相关缓存
@@ -361,10 +349,6 @@ export class WorkBreakdownService {
         tags: item.tags || '',
         members: item.members || '',
         progress_notes: item.progress_notes || '',
-        planned_start_time: item.planned_start_time || undefined,
-        planned_end_time: item.planned_end_time || undefined,
-        actual_start_time: item.actual_start_time || undefined,
-        actual_end_time: item.actual_end_time || undefined,
       };
     });
 

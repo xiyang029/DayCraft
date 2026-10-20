@@ -9,9 +9,9 @@
 
 ```
 DayCraft/
-├── client/   前端：Vite 6 + React 18 + react-router-dom 6 + Tailwind 4（@tailwindcss/vite，CSS-first，无 config 文件）
+├── client/   前端：Vite 8 + React 19 + react-router-dom 7 + Tailwind 4（@tailwindcss/vite，CSS-first，无 config 文件）
 │   └── src/{main.tsx, App.tsx, pages/, components/, contexts/, lib/, providers已删}
-├── server/   后端：Express 4 + node:sqlite（内置模块）+ bcryptjs + cookie-parser
+├── server/   后端：Express 5 + node:sqlite（内置模块）+ bcryptjs + cookie-parser
 │   └── src/{index.ts, routes/, lib/}
 ├── data/     SQLite 库文件（默认 ./data/daycraft.db，git 忽略）
 ├── scripts/  backup.ps1 / restore.ps1（SQLite 备份恢复）
@@ -125,8 +125,8 @@ $env:NODE_ENV='production'; $env:PORT='3002'; $env:SQLITE_DB_PATH='F:\DayCraft\s
   `onValueChange` 签名是 `(value: string | null, details)`，`setState` 包一层 `(v) => setX(v ?? '')`。
 - `components/ui` 的 wrapper（如 Button）上游是普通函数组件（面向 React 19 的 ref-as-prop，
   无 `React.forwardRef`）——**不要手改加 `forwardRef`**（违反上一条 ui 禁止手改约束）。
-  Base UI 的 Trigger/Close 类组件经 `render` prop 给目标塞 ref，React 18 下目标若是普通函数组件
-  会刷屏 `Function components cannot be given refs` 且 ref 失效（Tooltip/DropdownMenu/Dialog 都有过血案）。
+  Base UI 的 Trigger/Close 类组件经 `render` prop 给目标塞 ref，若目标是未把 ref 转发到 DOM 的普通函数组件，
+  ref 仍会失效（Tooltip/DropdownMenu/Dialog 都有过血案）。
   正确修法一律在**调用侧**：`render={...}` 的目标只能是原生元素（如 `button` + `buttonVariants()` 取样式）、
   forwardRef 组件或 react-router `Link`，不要传普通函数组件（如 `render={<Button/>}` 禁止，
   改为 `render={<button className={cn(buttonVariants(...))} .../>}`）。同理 react-hook-form 的

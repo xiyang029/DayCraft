@@ -16,13 +16,6 @@ import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "@/components/u
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-}
-
 interface WorkItem {
   content: string;
   project: Project;
@@ -43,10 +36,10 @@ interface Stats {
 }
 
 export default function DashboardOverview() {
-  const { user: authUser, profile: authProfile, loading } = useAuth();
+  const { user: authUser, loading } = useAuth();
   
   // 使用持久化状态替代普通状态
-  const [user, setUser] = usePersistentState<User | null>('dashboard-overview-user', null);
+  const [userReady, setUserReady] = useState(false);
   const [reports, setReports] = usePersistentState<Report[]>('dashboard-overview-reports', []);
   const [, setProjects] = usePersistentState<Project[]>('dashboard-overview-projects', []);
   const [isLoading, setIsLoading] = useState(true);
@@ -191,14 +184,9 @@ export default function DashboardOverview() {
   }, [fetchProjects, fetchRecentReports, fetchStats]);
 
   useEffect(() => {
-    // 使用本地会话的用户信息，名称优先取用户资料里的真实姓名
+    // 本地会话就绪后再加载概览数据
     if (authUser && !dataLoadedRef.current) {
-      setUser({
-        id: authUser.id,
-        name: authProfile?.full_name || authUser.email?.split('@')[0] || '用户',
-        email: authUser.email || '',
-        role: 'user'
-      });
+      setUserReady(true);
       
       // 检查数据是否需要重新加载
       const now = Date.now();
@@ -213,7 +201,7 @@ export default function DashboardOverview() {
         setIsLoading(false);
       }
     }
-  }, [authUser, authProfile, setUser, fetchData]);
+  }, [authUser, fetchData]);
 
   // 添加页面可见性监听
   useEffect(() => {
@@ -222,7 +210,7 @@ export default function DashboardOverview() {
         if (document.visibilityState === 'visible') {
           console.log('概览页面恢复可见，检查数据状态');
           // 只检查数据是否存在，不重新加载
-          if (authUser && (!user || reports.length === 0)) {
+          if (authUser && (!userReady || reports.length === 0)) {
             console.log('数据不存在，重新加载');
             dataLoadedRef.current = false;
             fetchData();
@@ -235,7 +223,7 @@ export default function DashboardOverview() {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
       };
     }
-  }, [authUser, user, reports, fetchData]);
+  }, [authUser, userReady, reports, fetchData]);
 
 
 
@@ -317,11 +305,10 @@ export default function DashboardOverview() {
   }, []);
 
 
-  if (loading || isLoading || !user) {
+  if (loading || isLoading || !userReady) {
     return (
-      <div className="flex h-64 items-center justify-center gap-3">
-        <Spinner className="size-5" />
-        <span className="text-muted-foreground">加载中...</span>
+      <div className="flex h-64 items-center justify-center">
+        <Spinner />
       </div>
     );
   }
@@ -329,7 +316,6 @@ export default function DashboardOverview() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold tracking-tight">欢迎回来，{user.name}</h1>
         <p className="text-sm text-muted-foreground">
           <span className="hidden md:inline">今天是 {new Date().toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
           <span className="inline md:hidden">今天是 {new Date().toLocaleDateString('zh-CN', { weekday: 'short', month: 'numeric', day: 'numeric' })}</span>

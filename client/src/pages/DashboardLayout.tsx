@@ -26,7 +26,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface UserProfile {
-  id: string;
   name: string;
   email: string;
   role: string[];
@@ -185,34 +184,22 @@ export default function DashboardLayout() {
       const data = (await res.json()) as { profile: DBUserProfile };
       const p = data.profile;
       const profile = {
-        id: user.id,
         name: p.full_name || user.email?.split('@')[0] || '用户',
         email: p.email || user.email || '',
         role: Array.isArray(p.role) ? p.role : ['user'],
       };
       setUserProfile(profile);
-      try {
-        sessionStorage.setItem(`user_profile_${user.id}`, JSON.stringify(profile));
-      } catch {
-        // ignore storage errors
-      }
       console.log('当前用户角色:', profile.role);
       setProfileFetched(true);
     } catch (error) {
       console.error('处理用户资料时出错:', error);
       if (user) {
         const basicProfile = {
-          id: user.id,
           name: user.email?.split('@')[0] || '用户',
           email: user.email || '',
           role: ['user']
         };
         setUserProfile(basicProfile);
-        try {
-          sessionStorage.setItem(`user_profile_${user.id}`, JSON.stringify(basicProfile));
-        } catch {
-          // ignore storage errors
-        }
         console.log('当前用户角色:', basicProfile.role);
       }
     } finally {
@@ -240,20 +227,11 @@ export default function DashboardLayout() {
   // 在组件内，动态获取导航项
   const navigation = getNavigation(userProfile?.role);
 
-  // 页头标题：优先匹配一级菜单，其次匹配二级菜单（如 /dashboard/team-reports -> 报告）
-  const activeNavName =
-    navigation.find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))?.name ??
-    navigation.find((item) => item.subItems?.some((sub) => sub.href === pathname))?.name ??
-    '仪表盘';
-
   // 处理加载状态
   if (isLoading || authLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Spinner className="size-12" />
-          <p className="text-muted-foreground">加载中...</p>
-        </div>
+        <Spinner />
       </div>
     );
   }
@@ -452,9 +430,6 @@ export default function DashboardLayout() {
               >
                 <MenuIcon />
               </Button>
-              <h1 className="truncate text-lg font-medium text-foreground">
-                {activeNavName}
-              </h1>
             </div>
             <div className="flex items-center gap-2">
               <span className="hidden text-sm text-muted-foreground sm:inline-block">

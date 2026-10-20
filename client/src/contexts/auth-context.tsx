@@ -1,11 +1,10 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { LocalUser, UserProfile } from '../lib/db/types';
+import type { LocalUser } from '../lib/db/types';
 
 interface AuthContextType {
   user: LocalUser | null;
-  profile: UserProfile | null;
   loading: boolean;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<null>;
@@ -13,7 +12,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
-  profile: null,
   loading: true,
   signOut: async () => {},
   refreshSession: async () => null,
@@ -21,7 +19,6 @@ const AuthContext = createContext<AuthContextType>({
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<LocalUser | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -30,12 +27,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await fetch('/api/auth/me');
       if (!res.ok) {
         setUser(null);
-        setProfile(null);
         return null;
       }
-      const data = (await res.json()) as { user: LocalUser; profile: UserProfile };
+      const data = (await res.json()) as { user: LocalUser };
       setUser(data.user);
-      setProfile(data.profile);
       return null;
     } catch (error) {
       console.error('刷新会话时出错:', error);
@@ -72,12 +67,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // 把本次跳转顶回 /login
       navigate('/');
       setUser(null);
-      setProfile(null);
       setLoading(false);
     }
   };
 
-  const value = { user, profile, loading, signOut, refreshSession };
+  const value = { user, loading, signOut, refreshSession };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
