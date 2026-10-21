@@ -64,13 +64,13 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
   const projectsLoadedRef = useRef(false);
   const loadSeqRef = useRef(0);
 
-  // 加载已有日报的内容
-  const loadExistingReportContent = async (selectedDate: string, seq: number) => {
+  // 加载已有日报的内容；返回是否加载成功（成功的加载不再弹 toast，只展示弹窗内容）
+  const loadExistingReportContent = async (selectedDate: string, seq: number): Promise<boolean> => {
     try {
       const data = await apiGet<{ reports: Array<{ id: string; report_items: ReportItemData[] }> }>(
         `/api/daily-reports?date=${selectedDate}&with_items=1`
       );
-      if (loadSeqRef.current !== seq) return;
+      if (loadSeqRef.current !== seq) return true;
       const report = data.reports[0];
       const typedItems = (report?.report_items || []) as ReportItemData[];
 
@@ -85,21 +85,21 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
             projectCode: project?.code,
           };
         }));
-        toast.add({ title: '已加载现有日报内容', type: 'info' });
       } else {
         setWorkItems([]);
-        toast.add({ title: '该日报没有工作内容，可以添加新内容', type: 'info' });
       }
+      return true;
     } catch (error) {
-      if (loadSeqRef.current !== seq) return;
+      if (loadSeqRef.current !== seq) return true;
       console.error('加载日报内容失败', error);
       toast.add({ title: '加载日报内容失败', type: 'error' });
+      return false;
     }
   };
 
-  // 检查所选日期是否已存在日报
-  const checkExistingReport = async (selectedDate: string, seq: number) => {
-    if (!user) return;
+  // 检查所选日期是否已存在日报；返回是否加载成功
+  const checkExistingReport = async (selectedDate: string, seq: number): Promise<boolean> => {
+    if (!user) return true;
     setIsLoadingExistingReport(true);
     setExistingReport(false);
     setWorkItems([]);
@@ -107,20 +107,23 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
       const data = await apiGet<{ reports: Array<{ id: string }> }>(
         `/api/daily-reports?date=${selectedDate}`
       );
-      if (loadSeqRef.current !== seq) return;
+      if (loadSeqRef.current !== seq) return true;
       if (data.reports[0]?.id) {
         setExistingReport(true);
-        await loadExistingReportContent(selectedDate, seq);
+        return await loadExistingReportContent(selectedDate, seq);
       }
+      return true;
     } catch (error) {
-      if (loadSeqRef.current !== seq) return;
+      if (loadSeqRef.current !== seq) return true;
       console.error('检查日报是否存在时出错', error);
+      toast.add({ title: '加载日报数据失败', type: 'error' });
+      return false;
     } finally {
       if (loadSeqRef.current === seq) setIsLoadingExistingReport(false);
     }
   };
 
-  // 弹窗打开时初始化：加载项目 + 加载该日期日报
+  // 弹窗打开时初始化：加载项目 + 加载该日期日报；任一步失败则不展示弹窗
   useEffect(() => {
     if (!open || !user) return;
     const seq = ++loadSeqRef.current;
@@ -141,10 +144,15 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
         if (loadSeqRef.current !== seq) return;
         console.error('获取项目失败', error);
         toast.add({ title: '获取项目数据失败', type: 'error' });
+        // 初始化失败：不展示弹窗界面
+        onOpenChange(false);
+        return;
       } finally {
         if (loadSeqRef.current === seq) setIsLoading(false);
       }
-      await checkExistingReport(targetDate, seq);
+      const loaded = await checkExistingReport(targetDate, seq);
+      // 初始化失败：不展示弹窗界面
+      if (!loaded && loadSeqRef.current === seq) onOpenChange(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialDate, user]);
@@ -373,7 +381,7 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
             </Card>
           </div>
         ) : (
-          <div className="flex min-h-0 grow flex-col gap-4 overflow-auto p-1">
+          <div className="flex min-h-0 grow flex-col gap-4 overflow-auto p-1 [&>*]:shrink-0">
             <Field>
               <FieldLabel htmlFor="daily-dialog-date">
                 日报日期

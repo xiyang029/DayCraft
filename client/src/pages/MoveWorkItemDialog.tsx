@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -58,6 +58,9 @@ export default function MoveWorkItemDialog({
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingParents, setIsLoadingParents] = useState(false);
 
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   // 加载可选的父级工作项
   useEffect(() => {
     if (isOpen && workItem) {
@@ -69,14 +72,19 @@ export default function MoveWorkItemDialog({
         setPotentialParents(filteredParents);
         setIsLoadingParents(false);
       } else if (projectId) {
-        // 如果没有传入父级列表，则进行请求
-        loadPotentialParents();
+        // 如果没有传入父级列表，则进行请求；加载失败则不展示弹窗
+        void loadPotentialParents().then((loaded) => {
+          if (loaded) return;
+          setMoveType("root");
+          setSelectedParentId("");
+          onCloseRef.current();
+        });
       }
     }
   }, [isOpen, workItem, projectId, propsParents]);
 
-  const loadPotentialParents = async () => {
-    if (!workItem?.dbId) return;
+  const loadPotentialParents = async (): Promise<boolean> => {
+    if (!workItem?.dbId) return false;
 
     setIsLoadingParents(true);
     try {
@@ -85,9 +93,11 @@ export default function MoveWorkItemDialog({
         workItem.dbId,
       );
       setPotentialParents(parents);
+      return true;
     } catch (error) {
       console.error("加载可选父级失败:", error);
       toast.add({ title: "加载可选父级失败", type: 'error' });
+      return false;
     } finally {
       setIsLoadingParents(false);
     }
