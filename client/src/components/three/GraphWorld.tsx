@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
+  Maximize2 as MaximizeIcon,
+  Minimize2 as MinimizeIcon,
   Pause as PauseIcon,
   Play as PlayIcon,
   RotateCcw as RotateCcwIcon,
@@ -174,12 +176,14 @@ export default function GraphWorld({
   children,
 }: GraphWorldProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const homeRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
 
   const [autoRotate, setAutoRotate] = useState(true);
   const [bloomEnabled, setBloomEnabled] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const hoveredKeyRef = useRef<string | null>(null);
   const selectedKeyRef = useRef<string | null>(null);
   const autoRotateRef = useRef(true);
@@ -194,6 +198,15 @@ export default function GraphWorld({
   onPickRef.current = onPick;
   onHoverKeyChangeRef.current = onHoverKeyChange;
   isPickableKeyRef.current = isPickableKey;
+
+  // 全屏状态跟随浏览器（含 Esc 退出）
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(document.fullscreenElement === cardRef.current);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -891,9 +904,25 @@ export default function GraphWorld({
     controls.update();
   };
 
+  const handleToggleFullscreen = () => {
+    const card = cardRef.current;
+    if (!card) return;
+    if (document.fullscreenElement === card) {
+      void document.exitFullscreen();
+    } else {
+      void card.requestFullscreen?.();
+    }
+  };
+
   return (
-    <Card className="relative w-full overflow-hidden [--card-spacing:0px]">
-      <div ref={containerRef} className={viewportClassName} />
+    <Card
+      ref={cardRef}
+      className={`relative w-full overflow-hidden [--card-spacing:0px]${isFullscreen ? ' h-screen w-screen rounded-none' : ''}`}
+    >
+      <div
+        ref={containerRef}
+        className={isFullscreen ? 'h-full min-h-0 w-full flex-1 bg-[#050a18]' : viewportClassName}
+      />
 
       {/* 工具栏：视角与特效 */}
       <Card className="absolute top-4 left-4 z-10 p-2">
@@ -924,6 +953,15 @@ export default function GraphWorld({
             onClick={() => setBloomEnabled((v) => !v)}
           >
             <SparklesIcon />
+          </Button>
+          <Button
+            variant={isFullscreen ? 'secondary' : 'ghost'}
+            size="icon-sm"
+            aria-label={isFullscreen ? '退出全屏' : '全屏'}
+            title={isFullscreen ? '退出全屏（Esc）' : '全屏查看'}
+            onClick={handleToggleFullscreen}
+          >
+            {isFullscreen ? <MinimizeIcon /> : <MaximizeIcon />}
           </Button>
           {toolbarBadge}
         </div>
