@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -52,67 +52,33 @@ export default function MoveWorkItemDialog({
 }: MoveWorkItemDialogProps) {
   const [moveType, setMoveType] = useState<"root" | "parent">("root");
   const [selectedParentId, setSelectedParentId] = useState<string>("");
+  const [parentError, setParentError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [potentialParents, setPotentialParents] = useState<PotentialParent[]>(
     [],
   );
   const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingParents, setIsLoadingParents] = useState(false);
 
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-
-  // 加载可选的父级工作项
+  // 直接消费父组件预计算的 potentialParents（客户端已计算完成，无需 dialog 内再次请求）；过滤掉自身
   useEffect(() => {
     if (isOpen && workItem) {
-      if (propsParents.length > 0) {
-        // 如果传入了预先计算的父级列表，直接使用并过滤
-        const filteredParents = propsParents.filter(
-          (parent) => parent.id !== workItem.dbId, // 排除自己
-        );
-        setPotentialParents(filteredParents);
-        setIsLoadingParents(false);
-      } else if (projectId) {
-        // 如果没有传入父级列表，则进行请求；加载失败则不展示弹窗
-        void loadPotentialParents().then((loaded) => {
-          if (loaded) return;
-          setMoveType("root");
-          setSelectedParentId("");
-          onCloseRef.current();
-        });
-      }
+      setPotentialParents(propsParents.filter((parent) => parent.id !== workItem.dbId));
     }
-  }, [isOpen, workItem, projectId, propsParents]);
-
-  const loadPotentialParents = async (): Promise<boolean> => {
-    if (!workItem?.dbId) return false;
-
-    setIsLoadingParents(true);
-    try {
-      const parents = await workBreakdownService.getPotentialParents(
-        projectId,
-        workItem.dbId,
-      );
-      setPotentialParents(parents);
-      return true;
-    } catch (error) {
-      console.error("加载可选父级失败:", error);
-      toast.add({ title: "加载可选父级失败", type: 'error' });
-      return false;
-    } finally {
-      setIsLoadingParents(false);
-    }
-  };
+  }, [isOpen, workItem, propsParents]);
 
   const handleMove = async () => {
+    setFormError(null);
     if (!workItem?.dbId) {
-      toast.add({ title: "工作项信息不完整", type: 'error' });
+      setFormError("工作项信息不完整");
       return;
     }
 
     if (moveType === "parent" && !selectedParentId) {
-      toast.add({ title: "请选择目标父级工作项", type: 'error' });
+      setParentError("请选择目标父级工作项");
       return;
     }
+
+    setParentError(null);
 
     setIsLoading(true);
     try {
@@ -124,7 +90,7 @@ export default function MoveWorkItemDialog({
       onClose();
     } catch (error) {
       console.error("移动工作项失败:", error);
-      toast.add({ title: error instanceof Error ? error.message : "移动工作项失败", type: 'error' });
+      setFormError(error instanceof Error ? error.message : "移动工作项失败");
     } finally {
       setIsLoading(false);
     }
@@ -134,6 +100,8 @@ export default function MoveWorkItemDialog({
     if (!isLoading) {
       setMoveType("root");
       setSelectedParentId("");
+      setParentError(null);
+      setFormError(null);
       onClose();
     }
   };
@@ -190,7 +158,10 @@ export default function MoveWorkItemDialog({
 
             <RadioGroup
               value={moveType}
-              onValueChange={(value) => setMoveType(value as "root" | "parent")}
+              onValueChange={(value) => {
+                setMoveType(value as "root" | "parent");
+                setParentError(null);
+              }}
             >
               <Field orientation="horizontal">
                 <RadioGroupItem value="root" id="root" />
@@ -206,21 +177,19 @@ export default function MoveWorkItemDialog({
             {/* 父级选择 */}
             {moveType === "parent" && (
               <div className="flex flex-col gap-2">
-                {isLoadingParents ? (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Spinner />
-                    加载可选父级...
-                  </div>
-                ) : potentialParents.length > 0 ? (
+                {potentialParents.length > 0 ? (
                   <Select
                     value={selectedParentId}
-                    onValueChange={(v) => setSelectedParentId(v ?? "")}
+                    onValueChange={(v) => {
+                      setSelectedParentId(v ?? "");
+                      setParentError(null);
+                    }}
                     items={potentialParents.map((p) => ({
                       label: p.name,
                       value: p.id,
                     }))}
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger className="w-full" aria-invalid={!!parentError}>
                       <SelectValue placeholder="选择目标父级工作项">
                         {selectedParentId &&
                           (() => {
@@ -287,7 +256,7 @@ export default function MoveWorkItemDialog({
                 )}
               </div>
             )}
-            <FieldError errors={[]} />
+            <FieldError errors={parentError ? [{ message: parentError }] : []} />
           </Field>
 
           {/* 预览信息 */}
@@ -308,6 +277,12 @@ export default function MoveWorkItemDialog({
             </div>
           </div>
         </div>
+
+        {formError && (
+          <Field>
+            <FieldError errors={[{ message: formError }]} />
+          </Field>
+        )}
 
         <DialogFooter>
           <Button variant="outline" onClick={handleClose} disabled={isLoading}>

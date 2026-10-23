@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { CalendarIcon, TrashIcon, SaveIcon, CopyIcon, EyeIcon, FileTextIcon, PlusCircleIcon } from "lucide-react";
 import { useAuth } from "../contexts/auth-context";
 import { apiGet, apiPost } from "../lib/api";
@@ -44,37 +44,55 @@ interface ReportItemData {
 interface DailyReportDialogProps {
   open: boolean;
   date: string | null;
+  projects: Project[];
+  initialItems: WorkItem[];
+  initialExistingReport: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
 }
 
-export default function DailyReportDialog({ open, date: initialDate, onOpenChange, onSaved }: DailyReportDialogProps) {
+export default function DailyReportDialog({ open, date: initialDate, projects, initialItems, initialExistingReport, onOpenChange, onSaved }: DailyReportDialogProps) {
   const { user } = useAuth();
 
   const [isSaving, setIsSaving] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingExistingReport, setIsLoadingExistingReport] = useState(false);
   const [date, setDate] = useState(initialDate ?? format(new Date(), 'yyyy-MM-dd'));
-  const [workItems, setWorkItems] = useState<WorkItem[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [existingReport, setExistingReport] = useState(false);
+  const [workItems, setWorkItems] = useState<WorkItem[]>(initialItems);
+  const [existingReport, setExistingReport] = useState(initialExistingReport);
   const [showPreview, setShowPreview] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [selectedProjectError, setSelectedProjectError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const projectsLoadedRef = useRef(false);
-  const loadSeqRef = useRef(0);
+  // 弹窗打开时用父组件预加载好的初始数据重置表单
+  useEffect(() => {
+    if (open) {
+      setDate(initialDate ?? format(new Date(), 'yyyy-MM-dd'));
+      setWorkItems(initialItems);
+      setExistingReport(initialExistingReport);
+      setShowPreview(false);
+      setSelectedProjectId('');
+      setSelectedProjectError(null);
+      setFormError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
-  // 加载已有日报的内容；返回是否加载成功（成功的加载不再弹 toast，只展示弹窗内容）
-  const loadExistingReportContent = async (selectedDate: string, seq: number): Promise<boolean> => {
+  // 处理日期变更：dialog 已打开，调用 daily-reports 检查/加载该日期；失败走 dialog 内 formError
+  const handleDateChange = async (newDate: string) => {
+    setDate(newDate);
+    setFormError(null);
+    setSelectedProjectError(null);
+    setWorkItems([]);
+    setExistingReport(false);
+    if (!user) return;
     try {
       const data = await apiGet<{ reports: Array<{ id: string; report_items: ReportItemData[] }> }>(
-        `/api/daily-reports?date=${selectedDate}&with_items=1`
+        `/api/daily-reports?date=${newDate}&with_items=1`
       );
-      if (loadSeqRef.current !== seq) return true;
       const report = data.reports[0];
-      const typedItems = (report?.report_items || []) as ReportItemData[];
-
-      if (typedItems.length > 0) {
+      if (report?.id) {
+        setExistingReport(true);
+        const typedItems = (report.report_items || []) as ReportItemData[];
         setWorkItems(typedItems.map(item => {
           const project = Array.isArray(item.projects) ? item.projects[0] : item.projects;
           return {
@@ -85,83 +103,11 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
             projectCode: project?.code,
           };
         }));
-      } else {
-        setWorkItems([]);
       }
-      return true;
     } catch (error) {
-      if (loadSeqRef.current !== seq) return true;
-      console.error('加载日报内容失败', error);
-      toast.add({ title: '加载日报内容失败', type: 'error' });
-      return false;
+      console.error('切换日期加载日报失败', error);
+      setFormError(error instanceof Error ? `加载日报数据失败: ${error.message}` : '加载日报数据失败');
     }
-  };
-
-  // 检查所选日期是否已存在日报；返回是否加载成功
-  const checkExistingReport = async (selectedDate: string, seq: number): Promise<boolean> => {
-    if (!user) return true;
-    setIsLoadingExistingReport(true);
-    setExistingReport(false);
-    setWorkItems([]);
-    try {
-      const data = await apiGet<{ reports: Array<{ id: string }> }>(
-        `/api/daily-reports?date=${selectedDate}`
-      );
-      if (loadSeqRef.current !== seq) return true;
-      if (data.reports[0]?.id) {
-        setExistingReport(true);
-        return await loadExistingReportContent(selectedDate, seq);
-      }
-      return true;
-    } catch (error) {
-      if (loadSeqRef.current !== seq) return true;
-      console.error('检查日报是否存在时出错', error);
-      toast.add({ title: '加载日报数据失败', type: 'error' });
-      return false;
-    } finally {
-      if (loadSeqRef.current === seq) setIsLoadingExistingReport(false);
-    }
-  };
-
-  // 弹窗打开时初始化：加载项目 + 加载该日期日报；任一步失败则不展示弹窗
-  useEffect(() => {
-    if (!open || !user) return;
-    const seq = ++loadSeqRef.current;
-    const targetDate = initialDate ?? format(new Date(), 'yyyy-MM-dd');
-    setDate(targetDate);
-    setShowPreview(false);
-    setSelectedProjectId('');
-    setIsLoading(true);
-    (async () => {
-      try {
-        if (!projectsLoadedRef.current) {
-          const projectsRes = await apiGet<{ projects: Project[] }>('/api/projects?active_only=true');
-          if (loadSeqRef.current !== seq) return;
-          setProjects(projectsRes.projects || []);
-          projectsLoadedRef.current = true;
-        }
-      } catch (error) {
-        if (loadSeqRef.current !== seq) return;
-        console.error('获取项目失败', error);
-        toast.add({ title: '获取项目数据失败', type: 'error' });
-        // 初始化失败：不展示弹窗界面
-        onOpenChange(false);
-        return;
-      } finally {
-        if (loadSeqRef.current === seq) setIsLoading(false);
-      }
-      const loaded = await checkExistingReport(targetDate, seq);
-      // 初始化失败：不展示弹窗界面
-      if (!loaded && loadSeqRef.current === seq) onOpenChange(false);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, initialDate, user]);
-
-  // 处理日期变更
-  const handleDateChange = async (newDate: string) => {
-    setDate(newDate);
-    const seq = ++loadSeqRef.current;
-    await checkExistingReport(newDate, seq);
   };
 
   // 处理工作项内容变更（按全局下标）
@@ -179,10 +125,11 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
       : (projects.length > 0 ? projects[0].id : ''));
 
     if (projectId === '') {
-      toast.add({ title: '请先选择一个项目', type: 'error' });
+      setSelectedProjectError('请先选择一个项目');
       return;
     }
 
+    setSelectedProjectError(null);
     setWorkItems([...workItems, { content: '', projectId }]);
     setSelectedProjectId('');
   };
@@ -269,15 +216,16 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
 
   // 保存日报（服务端按日期 upsert，明细全量替换）
   const handleSave = async () => {
+    setFormError(null);
     if (!user) {
-      toast.add({ title: '用户未登录', type: 'error' });
+      setFormError('用户未登录');
       return;
     }
     const filteredItems = workItems.filter(item =>
       item.content.trim() !== '' && item.projectId
     );
     if (filteredItems.length === 0) {
-      toast.add({ title: '请先添加工作内容', type: 'error' });
+      setFormError('请先添加工作内容');
       return;
     }
     setIsSaving(true);
@@ -292,7 +240,7 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
       onOpenChange(false);
     } catch (error) {
       console.error('保存日报失败', error);
-      toast.add({ title: '保存日报失败', type: 'error' });
+      setFormError(error instanceof Error ? `保存日报失败: ${error.message}` : '保存日报失败');
     } finally {
       setIsSaving(false);
     }
@@ -313,11 +261,7 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
           <DialogDescription>填写该日期各项目的工作内容</DialogDescription>
         </DialogHeader>
 
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <Spinner />
-          </div>
-        ) : projects.length === 0 && workItems.length === 0 ? (
+        {projects.length === 0 && workItems.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
             您目前没有活跃的项目，请先在项目管理中创建并激活项目后再创建日报。
           </p>
@@ -396,7 +340,6 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
                   value={date}
                   onChange={(e) => handleDateChange(e.target.value)}
                   required
-                  disabled={isLoadingExistingReport}
                 />
               </InputGroup>
               <FieldError errors={[]} />
@@ -425,8 +368,8 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
                   <div className="flex items-end gap-2">
                     <Field className="grow">
                       <FieldLabel htmlFor="daily-dialog-project">选择项目</FieldLabel>
-                      <Select value={selectedProjectId || "__none"} onValueChange={(value: string | null) => setSelectedProjectId(value === null || value === "__none" ? "" : value)} items={[{ label: '选择项目...', value: '__none' }, ...availableProjects.map((project) => ({ label: `${project.name} (${project.code})`, value: project.id }))]}>
-                        <SelectTrigger id="daily-dialog-project" className="w-full">
+                      <Select value={selectedProjectId || "__none"} onValueChange={(value: string | null) => { setSelectedProjectId(value === null || value === "__none" ? "" : value); setSelectedProjectError(null); }} items={[{ label: '选择项目...', value: '__none' }, ...availableProjects.map((project) => ({ label: `${project.name} (${project.code})`, value: project.id }))]}>
+                        <SelectTrigger id="daily-dialog-project" className="w-full" aria-invalid={!!selectedProjectError}>
                           <SelectValue placeholder="选择项目..." />
                         </SelectTrigger>
                         <SelectContent>
@@ -440,7 +383,7 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
                           </SelectGroup>
                         </SelectContent>
                       </Select>
-                      <FieldError errors={[]} />
+                      <FieldError errors={selectedProjectError ? [{ message: selectedProjectError }] : []} />
                     </Field>
                     <Button variant="outline" size="sm"
                       type="button"
@@ -517,8 +460,14 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
           </div>
         )}
 
+        {formError && (
+          <Field>
+            <FieldError errors={[{ message: formError }]} />
+          </Field>
+        )}
+
         <DialogFooter>
-          {(projects.length > 0 || workItems.length > 0) && !isLoading && (
+          {(projects.length > 0 || workItems.length > 0) && (
             <Button variant="outline" size="sm"
               type="button"
               onClick={togglePreview}
@@ -530,7 +479,7 @@ export default function DailyReportDialog({ open, date: initialDate, onOpenChang
           <Button size="sm"
             type="button"
             onClick={handleSave}
-            disabled={isSaving || (projects.length === 0 && workItems.length === 0) || isLoadingExistingReport}
+            disabled={isSaving || (projects.length === 0 && workItems.length === 0)}
           >
             {isSaving ? (
               <>

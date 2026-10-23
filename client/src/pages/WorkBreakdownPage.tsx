@@ -396,8 +396,8 @@ export default function WorkBreakdownPage() {
     return { name: '', description: '', status: '未开始', tags: '', members: '', progressNotes: '' };
   })();
 
-  // 对话框保存：新建落库后插入树 / 编辑落库后更新树
-  const handleDialogSave = async (fields: WorkItemDialogFields) => {
+  // 对话框保存：新建落库后插入树 / 编辑落库后更新树；返回错误字符串交给 WorkItemDialog 内联展示
+  const handleDialogSave = async (fields: WorkItemDialogFields): Promise<string | void> => {
     if (!selectedProject || !user?.id || !dialogMode) return;
     setIsSaving(true);
     try {
@@ -461,8 +461,7 @@ export default function WorkBreakdownPage() {
       }
     } catch (error) {
       console.error('保存工作项失败', error);
-      toast.add({ title: `保存工作项失败: ${error instanceof Error ? error.message : '未知错误'}`, type: 'error' });
-      return;
+      return `保存工作项失败: ${error instanceof Error ? error.message : '未知错误'}`;
     } finally {
       setIsSaving(false);
     }

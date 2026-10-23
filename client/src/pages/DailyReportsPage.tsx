@@ -365,11 +365,45 @@ export default function DailyReportsPage() {
     }
   }, [user, setProjects, updateWeekData]);
 
-  // 打开新建/编辑日报弹窗
-  const openReportDialog = (date: string) => {
-    setDialogDate(date);
-    setDialogOpen(true);
-  };
+  // 打开新建/编辑日报弹窗：先在父组件加载项目+该日期已有日报，失败 toast 不开弹窗，成功才挂载
+  const [dialogProjects, setDialogProjects] = useState<Project[]>([]);
+  const [dialogInitialItems, setDialogInitialItems] = useState<Array<{ id?: string; content: string; projectId: string; projectName?: string; projectCode?: string }>>([]);
+  const [dialogInitialExistingReport, setDialogInitialExistingReport] = useState(false);
+
+  const openReportDialog = useCallback(async (date: string) => {
+    if (!user) return;
+    try {
+      let activeProjects = projects.filter(p => p.is_active);
+      if (activeProjects.length === 0 && projects.length === 0) {
+        const projectsRes = await apiGet<{ projects: Project[] }>('/api/projects');
+        setProjects(projectsRes.projects || []);
+        activeProjects = (projectsRes.projects || []).filter(p => p.is_active);
+      }
+      const data = await apiGet<{ reports: Array<{ id: string; report_items?: Array<{ id: string; content: string; project_id: string; projects?: Project | Project[] | null }> }> }>(
+        `/api/daily-reports?date=${date}&with_items=1`
+      );
+      const report = data.reports[0];
+      const existing = !!report?.id;
+      const items = (report?.report_items || []).map(item => {
+        const project = Array.isArray(item.projects) ? item.projects[0] : item.projects;
+        return {
+          id: item.id,
+          content: item.content,
+          projectId: item.project_id,
+          projectName: project?.name,
+          projectCode: project?.code,
+        };
+      });
+      setDialogProjects(activeProjects);
+      setDialogInitialItems(items);
+      setDialogInitialExistingReport(existing);
+      setDialogDate(date);
+      setDialogOpen(true);
+    } catch (error) {
+      console.error('打开日报弹窗加载数据失败', error);
+      toast.add({ title: error instanceof Error ? `加载日报数据失败: ${error.message}` : '加载日报数据失败', type: 'error' });
+    }
+  }, [user, projects, setProjects]);
 
   // 弹窗保存成功后刷新列表
   const handleDialogSaved = useCallback(() => {
@@ -392,12 +426,11 @@ export default function DailyReportsPage() {
     checkTodayReport();
   }, [user]);
 
-  // 深链直达：/dashboard/daily-reports?edit=yyyy-MM-dd 直接打开编辑弹窗
+  // 深链直达：/dashboard/daily-reports?edit=yyyy-MM-dd 直接打开编辑弹窗（同样走预加载，失败不开）
   useEffect(() => {
     const edit = searchParams.get('edit');
     if (edit && /^\d{4}-\d{2}-\d{2}$/.test(edit)) {
-      setDialogDate(edit);
-      setDialogOpen(true);
+      void openReportDialog(edit);
       setSearchParams({}, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -870,6 +903,9 @@ export default function DailyReportsPage() {
       <DailyReportDialog
         open={dialogOpen}
         date={dialogDate}
+        projects={dialogProjects}
+        initialItems={dialogInitialItems}
+        initialExistingReport={dialogInitialExistingReport}
         onOpenChange={setDialogOpen}
         onSaved={handleDialogSaved}
       />

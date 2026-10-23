@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { SaveIcon } from "lucide-react";
-import { toast } from "@/components/ui/toast";
 import { apiGet } from "../lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,7 +51,7 @@ interface WorkItemDialogProps {
   initial: WorkItemDialogFields;
   isSaving: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (fields: WorkItemDialogFields) => void;
+  onSave: (fields: WorkItemDialogFields) => Promise<string | void>;
 }
 
 // 工作标签选项
@@ -183,6 +182,7 @@ export default function WorkItemDialog({ open, title, initial, isSaving, onOpenC
   const [members, setMembers] = useState(initial.members);
   const [progressNotes, setProgressNotes] = useState(initial.progressNotes);
   const [nameError, setNameError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   // 每次打开递增，强制标签/人员 combobox 重新挂载，避免内部 state 残留上次的值
   const [session, setSession] = useState(0);
   // 数据库真实用户列表（参与人员只能从中选择，不可自由输入）
@@ -198,6 +198,7 @@ export default function WorkItemDialog({ open, title, initial, isSaving, onOpenC
       setMembers(initial.members);
       setProgressNotes(initial.progressNotes);
       setNameError(null);
+      setFormError(null);
       setSession((s) => s + 1);
       apiGet<{ users: Array<{ id: string; full_name: string | null; email: string }> }>('/api/users')
         .then((d) => setMemberOptions(Array.from(new Set(d.users.map((u) => u.full_name || u.email)))))
@@ -206,14 +207,17 @@ export default function WorkItemDialog({ open, title, initial, isSaving, onOpenC
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim()) {
       setNameError('工作项名称不能为空');
-      toast.add({ title: '工作项名称不能为空', type: 'error' });
       return;
     }
     setNameError(null);
-    onSave({ name: name.trim(), description, status, tags, members, progressNotes });
+    setFormError(null);
+    const result = await onSave({ name: name.trim(), description, status, tags, members, progressNotes });
+    if (typeof result === 'string' && result) {
+      setFormError(result);
+    }
   };
 
   return (
@@ -327,6 +331,12 @@ export default function WorkItemDialog({ open, title, initial, isSaving, onOpenC
             <FieldError errors={[]} />
           </Field>
         </div>
+
+        {formError && (
+          <Field>
+            <FieldError errors={[{ message: formError }]} />
+          </Field>
+        )}
 
         <DialogFooter>
           <Button variant="outline" size="sm"

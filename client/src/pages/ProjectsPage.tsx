@@ -70,6 +70,8 @@ export default function ProjectsPage() {
     description: "", 
     is_active: true 
   });
+  const [addFormError, setAddFormError] = useState<string | null>(null);
+  const [editFormError, setEditFormError] = useState<string | null>(null);
   
   // 添加数据已加载的引用
   const dataLoadedRef = useRef(false);
@@ -167,6 +169,7 @@ export default function ProjectsPage() {
   const onSubmit = async (data: ProjectFormValues) => {
     if (!user) return;
 
+    setAddFormError(null);
     try {
       const res = await apiPost<{ project: Project }>('/api/projects', {
         name: data.name,
@@ -181,7 +184,7 @@ export default function ProjectsPage() {
       toast.add({ title: '项目创建成功', type: 'success' });
     } catch (error) {
       console.error('创建项目失败', error);
-      toast.add({ title: error instanceof ApiError ? error.message : '创建项目失败', type: 'error' });
+      setAddFormError(error instanceof ApiError ? error.message : '创建项目失败');
     }
   };
 
@@ -201,6 +204,7 @@ export default function ProjectsPage() {
   const saveEditedProject = async () => {
     if (!editingProjectId || !user) return;
 
+    setEditFormError(null);
     const parsed = projectSchema.pick({ name: true, code: true, description: true }).safeParse({
       name: editProject.name,
       code: editProject.code,
@@ -236,13 +240,14 @@ export default function ProjectsPage() {
       toast.add({ title: '项目更新成功', type: 'success' });
     } catch (error) {
       console.error('更新项目失败', error);
-      toast.add({ title: error instanceof ApiError ? error.message : '更新项目失败', type: 'error' });
+      setEditFormError(error instanceof ApiError ? error.message : '更新项目失败');
     }
   };
 
   // 取消编辑
   const cancelEditing = () => {
     setEditingProjectId(null);
+    setEditFormError(null);
   };
 
   // 删除项目
@@ -317,7 +322,7 @@ export default function ProjectsPage() {
       </div>
 
       {/* 添加项目弹窗 */}
-      <Dialog open={isAddingProject} onOpenChange={(open) => { if (!open) { setIsAddingProject(false); reset(); } }}>
+      <Dialog open={isAddingProject} onOpenChange={(open) => { if (!open) { setIsAddingProject(false); reset(); setAddFormError(null); } }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>添加新项目</DialogTitle>
@@ -387,6 +392,11 @@ export default function ProjectsPage() {
               />
               <FieldLabel htmlFor="is_active">项目活跃</FieldLabel>
             </Field>
+            {addFormError && (
+              <Field>
+                <FieldError errors={[{ message: addFormError }]} />
+              </Field>
+            )}
             <DialogFooter>
               <Button
                 type="button"
@@ -394,6 +404,7 @@ export default function ProjectsPage() {
                 onClick={() => {
                   setIsAddingProject(false);
                   reset();
+                  setAddFormError(null);
                 }}
               >
                 取消
@@ -577,6 +588,11 @@ export default function ProjectsPage() {
               <FieldLabel htmlFor="edit-is_active">项目活跃</FieldLabel>
             </Field>
           </div>
+          {editFormError && (
+            <Field>
+              <FieldError errors={[{ message: editFormError }]} />
+            </Field>
+          )}
           <DialogFooter>
             <Button
               type="button"

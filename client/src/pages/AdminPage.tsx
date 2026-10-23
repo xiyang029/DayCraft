@@ -73,8 +73,10 @@ export default function AdminPage() {
   const [roleTarget, setRoleTarget] = useState<{ id: string; email: string; isAdmin: boolean } | null>(null);
   // 对话框内的角色选择值（'user' | 'admin'），打开时初始化为当前值
   const [roleEditValue, setRoleEditValue] = useState<'user' | 'admin'>('user');
+  const [roleError, setRoleError] = useState<string | null>(null);
   // 删除确认框目标
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; email: string } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
 
   useEffect(() => {
@@ -176,6 +178,7 @@ export default function AdminPage() {
   // 打开角色编辑框（选择值初始化为当前角色，保证幂等）
   const openRoleEditor = (u: UserRow) => {
     setRoleEditValue(isAdminUser(u) ? 'admin' : 'user');
+    setRoleError(null);
     setRoleTarget({ id: u.id, email: u.email, isAdmin: isAdminUser(u) });
   };
 
@@ -186,6 +189,7 @@ export default function AdminPage() {
   // 确认角色变更（仅在有变化时提交）
   const confirmRoleChange = async () => {
     if (!roleTarget || acting || roleUnchanged) return;
+    setRoleError(null);
     setActing(true);
     try {
       const makeAdmin = roleEditValue === 'admin';
@@ -197,7 +201,7 @@ export default function AdminPage() {
       await fetchData();
     } catch (error) {
       console.error('更新角色失败:', error);
-      toast.add({ title: error instanceof Error ? error.message : '更新角色失败', type: 'error' });
+      setRoleError(error instanceof Error ? error.message : '更新角色失败');
     } finally {
       setActing(false);
     }
@@ -206,6 +210,7 @@ export default function AdminPage() {
   // 确认删除用户（级联清理其全部数据）
   const confirmDeleteUser = async () => {
     if (!deleteTarget || acting) return;
+    setDeleteError(null);
     setActing(true);
     try {
       const data = await apiDelete<{ message?: string }>(`/api/admin/users/${deleteTarget.id}`);
@@ -214,7 +219,7 @@ export default function AdminPage() {
       await fetchData();
     } catch (error) {
       console.error('删除用户失败:', error);
-      toast.add({ title: error instanceof Error ? error.message : '删除用户失败', type: 'error' });
+      setDeleteError(error instanceof Error ? error.message : '删除用户失败');
     } finally {
       setActing(false);
     }
@@ -353,7 +358,7 @@ export default function AdminPage() {
       </Card>
 
       {/* 角色编辑框：下拉选择目标角色，与当前一致时禁用确认 */}
-      <Dialog open={!!roleTarget} onOpenChange={(open) => { if (!open) setRoleTarget(null); }}>
+      <Dialog open={!!roleTarget} onOpenChange={(open) => { if (!open) { setRoleTarget(null); setRoleError(null); } }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>编辑用户角色</DialogTitle>
@@ -377,7 +382,7 @@ export default function AdminPage() {
             {roleUnchanged && (
               <FieldDescription>与当前角色一致，无需保存。</FieldDescription>
             )}
-            <FieldError errors={[]} />
+            <FieldError errors={roleError ? [{ message: roleError }] : []} />
           </Field>
           <DialogFooter>
             <Button
@@ -399,7 +404,7 @@ export default function AdminPage() {
       </Dialog>
 
       {/* 删除用户确认框（危险操作） */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setDeleteError(null); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>确认删除用户？</AlertDialogTitle>
@@ -407,6 +412,11 @@ export default function AdminPage() {
               将永久删除 {deleteTarget?.email} 的账号及其全部数据（项目、日报、待办、工作分解、分享、AI 设置等），不可恢复，请慎重确认。
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {deleteError && (
+            <Field>
+              <FieldError errors={[{ message: deleteError }]} />
+            </Field>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={acting}>取消</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={confirmDeleteUser} disabled={acting}>
